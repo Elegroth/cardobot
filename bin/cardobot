@@ -1,16 +1,21 @@
 #!/bin/bash
 #set -x
 
+mkdir -p $CARDO_HOME/transactions/
+mkdir -p $CARDO_HOME/wallets/
+mkdir -p $CARDO_HOME/logs/
+
 function send {
+    
     PAYMENT_ADDR=$(cat $CARDO_HOME/wallets/$1.addr)
     OUTPUT_ADDR=$4
     ADA_OUT=$(echo "($3 * 1000000) / 1" | bc)
 
     i=0
 
-    if [ ! -f $CARDO_HOME/$1_tx_log.csv ]; then
-        touch $CARDO_HOME/$1_tx_log.csv
-        echo "txid,ada_sent,fees,from_addr,to_addr,timestamp" > $CARDO_HOME/$1_tx_log.csv
+    if [ ! -f $CARDO_HOME/logs/$1_tx_log.csv ]; then
+        touch $CARDO_HOME/logs/$1_tx_log.csv
+        echo "txid,ada_sent,fees,from_addr,to_addr,timestamp" > $CARDO_HOME/logs/$1_tx_log.csv
     fi
 
     while [ $i -lt $2 ]; do
@@ -60,7 +65,7 @@ function send {
         SENDSELF=""
 
         while [[ $num -lt ${#TXPOLIC[@]} ]]; do
-            if [[ "$4" == "--send-all" ]]; then
+            if [[ "$5" == "--send-all" ]]; then
                 SENDALL="${SENDALL}+\"${TXTOKAMT[$num]} ${TXPOLIC[$num]}\""
             else
                 SENDSELF="${SENDSELF}+\"${TXTOKAMT[$num]} ${TXPOLIC[$num]}\""
@@ -142,7 +147,7 @@ function send {
 
         line_number=$(cat $1_tx_log.csv | wc -l)
 
-        echo "$line_number,`echo "scale = 2; $ADA_OUT / 1000000" | bc`,`echo "scale = 3; $TXFEE / 1000000" | bc | sed 's/^\$CARDO_HOME/0$CARDO_HOME/'`,$PAYMENT_ADDR,$OUTPUT_ADDR,$(date +%T)" >> $1_tx_log.csv
+        echo "$line_number,`echo "scale = 2; $ADA_OUT / 1000000" | bc`,`echo "scale = 3; $TXFEE / 1000000" | bc | sed 's/^\$CARDO_HOME/0$CARDO_HOME/'`,$PAYMENT_ADDR,$OUTPUT_ADDR,$(date +%T)" >> $CARDO_HOME/logs/$1_tx_log.csv
 
     done
 }
@@ -223,6 +228,15 @@ function generate {
     fi
 }
 
+function regen_test {
+    wallet_name=$1
+
+    cardano-cli address key-gen --verification-key-file $CARDO_HOME/wallets/${wallet_name}_temp.vkey --signing-key-file $CARDO_HOME/wallets/${wallet_name}_temp.skey
+    cardano-cli address build --payment-verification-key-file $CARDO_HOME/wallets/${wallet_name}_temp.vkey --stake-verification-key-file $CARDO_HOME/wallets/${wallet_name}_stake.vkey --out-file $CARDO_HOME/wallets/${wallet_name}_temp.addr --mainnet
+
+    echo -e "\nYour Wallet Address is:\n`cat $CARDO_HOME/wallets/${wallet_name}_temp.addr`"
+}
+
 function list {
     wallet_list=$(cd $CARDO_HOME/wallets/ && ls *.addr)
 
@@ -242,11 +256,13 @@ eg.\n  \e[1mcardobot check terrence1\e[0m\n    (checks the balance of the wallet
 
 
 if [[ "$1" == "send" ]]; then
-    send $2 $3 $4 $5
+    send $2 $3 $4 $5 $6
 elif [[ "$1" == "check" ]]; then
     check $2
 elif [[ "$1" == "generate" ]]; then
     generate $2
+elif [[ "$1" == "regen" ]]; then
+    regen_test $2
 elif [[ "$1" == "list" ]]; then
     list
 elif [[ "$1" =~ ^(--help|-help|-h|--h|help) ]]; then
