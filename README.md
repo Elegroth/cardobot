@@ -3,6 +3,7 @@ Cardobot is an application created for fun by Elegroth from the Cheeky Unts disc
 To install, just make sure you are in the same directory as the INSTALL file and validate that the file is executable.
 
 If both are true, just execute the INSTALL file
+    
     ./INSTALL
 
 This requires you to have write access to both your home directory and /usr/bin/
