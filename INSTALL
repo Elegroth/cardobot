@@ -1,0 +1,30 @@
+#!/bin/bash
+export CARDO_HOME=$HOME/.cardobot
+
+if [ `whoami` == 'root' ]; then
+    echo -e "Running as root!!!  Skipping to binary install to avoid issues.\nPlease re-run without sudo to ensure your variables get set correctly!"
+else
+    if [[ ! -z `ls $CARDO_HOME` ]]; then
+        echo "$CARDO_HOME is already created."
+    else
+        mkdir $CARDO_HOME
+    fi
+
+    if [[ ! -z `cat $HOME/.bash_profile | grep CARDO_HOME` ]]; then
+        echo "CARDO_HOME variable is already in your .bash_profile"
+    else
+        echo "export CARDO_HOME='$HOME/.cardobot'" >> $HOME/.bash_profile
+    fi
+fi
+
+if [[ ! -z `ls /usr/bin/cardobot` ]]; then
+    echo "Cardobot Already Installed"
+else
+    sudo bash -c "cp ./bin/cardobot /usr/bin/cardobot"
+    if [[ `echo $?` == '0' ]]; then
+        echo -e "Cardobot Successfully Installed!!!\n\nPlease either get a new ssh session or source your ~/.bash_profile file to ensure CARDO_HOME is set."
+    else
+        echo "You do not have permission to copy binaries, please rerun with elevated permissions..."
+        exit
+    fi
+fi
