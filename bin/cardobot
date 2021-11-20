@@ -207,13 +207,20 @@ function check {
 }
 
 function generate {
-    wallet_name=$2
+    wallet_name=$1
 
-    cardano-cli address key-gen --verification-key-file $CARDO_HOME/wallets/${wallet_name}.vkey --signing-key-file $CARDO_HOME/wallets/${wallet_name}.skey
-    cardano-cli stake-address key-gen --verification-key-file $CARDO_HOME/wallets/${wallet_name}_stake.vkey --signing-key-file $CARDO_HOME/wallets/${wallet_name}_stake.skey
-    cardano-cli address build --payment-verification-key-file $CARDO_HOME/wallets/${wallet_name}.vkey --stake-verification-key-file $CARDO_HOME/wallets/${wallet_name}_stake.vkey --out-file $CARDO_HOME/wallets/${wallet_name}.addr --mainnet
+    if [[ ! -z `ls $CARDO_HOME/wallets/${wallet_name}.addr` ]]; then
+        echo "Wallet already exists!!"
+        exit
+    else
 
-    echo -e "\nYour Wallet Address is:\n`cat $CARDO_HOME/wallets/${wallet_name}.addr`"
+        cardano-cli address key-gen --verification-key-file $CARDO_HOME/wallets/${wallet_name}.vkey --signing-key-file $CARDO_HOME/wallets/${wallet_name}.skey
+        cardano-cli stake-address key-gen --verification-key-file $CARDO_HOME/wallets/${wallet_name}_stake.vkey --signing-key-file $CARDO_HOME/wallets/${wallet_name}_stake.skey
+        cardano-cli address build --payment-verification-key-file $CARDO_HOME/wallets/${wallet_name}.vkey --stake-verification-key-file $CARDO_HOME/wallets/${wallet_name}_stake.vkey --out-file $CARDO_HOME/wallets/${wallet_name}.addr --mainnet
+
+        echo -e "\nYour Wallet Address is:\n`cat $CARDO_HOME/wallets/${wallet_name}.addr`"
+    
+    fi
 }
 
 function list {
