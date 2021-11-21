@@ -145,7 +145,7 @@ function send {
 
         rm -rf $CARDO_HOME/transactions/*
 
-        line_number=$(cat $1_tx_log.csv | wc -l)
+        line_number=$(cat $CARDO_HOME/logs/$1_tx_log.csv | wc -l)
 
         echo "$line_number,`echo "scale = 2; $ADA_OUT / 1000000" | bc`,`echo "scale = 3; $TXFEE / 1000000" | bc | sed 's/^\$CARDO_HOME/0$CARDO_HOME/'`,$PAYMENT_ADDR,$OUTPUT_ADDR,$(date +%T)" >> $CARDO_HOME/logs/$1_tx_log.csv
 
@@ -243,14 +243,19 @@ function list {
     echo -e "\nList of Wallets:\n\n${wallet_list}"
 }
 
+function logs {
+    cat $CARDO_HOME/logs/$1_tx_log.csv
+}
+
 function helpme {
 
     printf "\nHow to use Cardobot...\n\nValid Options:
   \e[3mcheck\e[0m\n   - used to check ada and tokens in a wallet
-  \e[3msend\e[0m\n   - used to send a transaction X number of times to an output address
   \e[3mgenerate\e[0m\n   - used to generate a new wallet address
+  \e[3mlogs\e[0m\n   - used to output the logs for an address in csv format
+  \e[3msend\e[0m\n   - used to send a transaction X number of times to an output address
   \e[3mlist\e[0m\n   - used to list existing wallets\n
-eg.\n  \e[1mcardobot check terrence1\e[0m\n    (checks the balance of the wallet terrence1)\n\n  \e[1mcardobot generate terrence2\e[0m\n    (generates a new wallet called terrence2)\n\n  \e[1mcardobot send terrence1 2 5 addrxxxxxxxxx\e[0m\n    (sends from the terrence1 wallet 2 transactions of 5 ADA to the address)\n\n"
+eg.\n  \e[1mcardobot check terrence1\e[0m\n    (checks the balance of the wallet terrence1)\n\n  \e[1mcardobot generate terrence2\e[0m\n    (generates a new wallet called terrence2)\n\n  \e[1mcardobot logs terrence1\e[0m\n    (outputs the logs of the terrence1 wallet in csv format)\n\n  \e[1mcardobot send terrence1 2 5 addrxxxxxxxxx\e[0m\n    (sends from the terrence1 wallet 2 transactions of 5 ADA to the address)\n\n"
 
 }
 
@@ -263,6 +268,8 @@ elif [[ "$1" == "generate" ]]; then
     generate $2
 elif [[ "$1" == "regen" ]]; then
     regen_test $2
+elif [[ "$1" == "logs" ]]; then
+    logs $2
 elif [[ "$1" == "list" ]]; then
     list
 elif [[ "$1" =~ ^(--help|-help|-h|--h|help) ]]; then
