@@ -20,6 +20,8 @@ function send {
 
     while [ $i -lt $2 ]; do
 
+        mkdir -p $CARDO_HOME/transactions/$1/
+
         UTXO=$(cardano-cli query utxo --mainnet --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
 
         TOTALADA_BF=()
@@ -76,36 +78,36 @@ function send {
 
         cardano-cli query protocol-parameters \
         --mainnet \
-        --out-file $CARDO_HOME/transactions/protocol${i}.json
+        --out-file $CARDO_HOME/transactions/$1/protocol${i}.json
 
-        echo "cardano-cli transaction build-raw ${TXIN[*]} --tx-out ${OUTPUT_ADDR}+${ADA_OUT}${SENDALL} --tx-out ${PAYMENT_ADDR}+0${SENDSELF} --fee 0 --out-file $CARDO_HOME/transactions/tx${i}.draft" > $CARDO_HOME/transactions/build_draft_${i}.sh
-        chmod 755 $CARDO_HOME/transactions/build_draft_${i}.sh
-        $CARDO_HOME/transactions/build_draft_${i}.sh
+        echo "cardano-cli transaction build-raw ${TXIN[*]} --tx-out ${OUTPUT_ADDR}+${ADA_OUT}${SENDALL} --tx-out ${PAYMENT_ADDR}+0${SENDSELF} --fee 0 --out-file $CARDO_HOME/transactions/$1/tx${i}.draft" > $CARDO_HOME/transactions/$1/build_draft_${i}.sh
+        chmod 755 $CARDO_HOME/transactions/$1/build_draft_${i}.sh
+        $CARDO_HOME/transactions/$1/build_draft_${i}.sh
 
         cardano-cli transaction calculate-min-fee \
-        --tx-body-file $CARDO_HOME/transactions/tx${i}.draft \
+        --tx-body-file $CARDO_HOME/transactions/$1/tx${i}.draft \
         --tx-in-count $TXCOUNT \
         --tx-out-count 1 \
         --witness-count $TXCOUNT \
         --byron-witness-count 0 \
         --mainnet \
-        --protocol-params-file $CARDO_HOME/transactions/protocol${i}.json | tee $CARDO_HOME/transactions/fees${i}
+        --protocol-params-file $CARDO_HOME/transactions/$1/protocol${i}.json | tee $CARDO_HOME/transactions/$1/fees${i}
 
-        TXFEE=$(cat $CARDO_HOME/transactions/fees${i} | awk '{print $1}')
+        TXFEE=$(cat $CARDO_HOME/transactions/$1/fees${i} | awk '{print $1}')
         ADABACK=$(($TOTALADA - $ADA_OUT - $TXFEE))
 
-        echo "cardano-cli transaction build-raw ${TXIN[*]} --tx-out ${OUTPUT_ADDR}+${ADA_OUT}${SENDALL} --tx-out ${PAYMENT_ADDR}+${ADABACK}${SENDSELF} --fee ${TXFEE} --out-file $CARDO_HOME/transactions/tx${i}.raw" > $CARDO_HOME/transactions/build_raw_${i}.sh
-        chmod 755 $CARDO_HOME/transactions/build_raw_${i}.sh
-        $CARDO_HOME/transactions/build_raw_${i}.sh
+        echo "cardano-cli transaction build-raw ${TXIN[*]} --tx-out ${OUTPUT_ADDR}+${ADA_OUT}${SENDALL} --tx-out ${PAYMENT_ADDR}+${ADABACK}${SENDSELF} --fee ${TXFEE} --out-file $CARDO_HOME/transactions/$1/tx${i}.raw" > $CARDO_HOME/transactions/$1/build_raw_${i}.sh
+        chmod 755 $CARDO_HOME/transactions/$1/build_raw_${i}.sh
+        $CARDO_HOME/transactions/$1/build_raw_${i}.sh
 
         cardano-cli transaction sign \
-        --tx-body-file $CARDO_HOME/transactions/tx${i}.raw \
+        --tx-body-file $CARDO_HOME/transactions/$1/tx${i}.raw \
         --signing-key-file $CARDO_HOME/wallets/$1.skey \
         --mainnet \
-        --out-file $CARDO_HOME/transactions/tx${i}.signed
+        --out-file $CARDO_HOME/transactions/$1/tx${i}.signed
 
         cardano-cli transaction submit \
-        --tx-file $CARDO_HOME/transactions/tx${i}.signed \
+        --tx-file $CARDO_HOME/transactions/$1/tx${i}.signed \
         --mainnet
 
         TXSENTDATE=$(date +%T)
@@ -135,15 +137,15 @@ function send {
                 TX_DONE="TRUE"
             fi
 
-            rm -rf $CARDO_HOME/transactions/utxo_after${i}
+            rm -rf $CARDO_HOME/transactions/$1/utxo_after${i}
 
         done
 
-        i=$[$i+1]
+        i=$(($i + 1))
         TXDONEDATE=$(date +%T)
         echo -e "Transaction #$i CONFIRMED at $TXDONEDATE!\n"
 
-        rm -rf $CARDO_HOME/transactions/*
+        rm -rf $CARDO_HOME/transactions/$1/*
 
         line_number=$(cat $CARDO_HOME/logs/$1_tx_log.csv | wc -l)
 
