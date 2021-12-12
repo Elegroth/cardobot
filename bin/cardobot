@@ -50,7 +50,7 @@ function send {
         TXTOKAMT=()
 
         for tok in ${TXPOLIC[@]}; do
-            TOKLIST=$(echo "${UTXO}" | grep $tok)
+            TOKLIST=$(echo "${UTXO}" | grep -w $tok)
             TOKAMT_BF=()
 
             while IFS= read -r line; do
@@ -180,7 +180,7 @@ function check {
     TXTOKAMT=()
 
     for tok in ${TXPOLIC[@]}; do
-        TOKLIST=$(echo "${UTXO}" | grep $tok)
+        TOKLIST=$(echo "${UTXO}" | grep -w $tok)
         TOKAMT_BF=()
 
         while IFS= read -r line; do
