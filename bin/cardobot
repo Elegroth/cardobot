@@ -373,6 +373,28 @@ function multisend {
     done
 }
 
+function newmultisend {
+
+    ADDR_LIST=($(ls $CARDO_HOME/wallets/$1*.addr))
+
+    for addr in "${ADDR_LIST[@]}"
+    do 
+
+        PAYMENT_ADDR=$(cat $addr)
+        ADDR_NAME=${addr#$CARDO_HOME/wallets/}
+        ADDR_NAME=${ADDR_NAME%%.addr}
+
+        if [ ! -f $CARDO_HOME/logs/${ADDR_NAME}_tx_log.csv ]; then
+            touch $CARDO_HOME/logs/${ADDR_NAME}_tx_log.csv
+            echo "txid,ada_sent,fees,from_addr,to_addr,timestamp" > $CARDO_HOME/logs/${ADDR_NAME}_tx_log.csv
+        fi
+
+        nohup cardobot send ${ADDR_NAME} $2 $3 $4 $5 2>&1 > ${ADDR_NAME}.out &
+
+    done
+
+}
+
 function check {
     wallet_addr=$(cat $CARDO_HOME/wallets/$1.addr)
 
@@ -477,15 +499,17 @@ function helpme {
   \e[3msend\e[0m\n   - used to send a transaction X number of times to an output address
   \e[3mmultisend\e[0m\n   - used to send a single transaction from all addresses starting with a name to an output address
   \e[3mlist\e[0m\n   - used to list existing wallets\n
-eg.\n  \e[1mcardobot check terrence1\e[0m\n    (checks the balance of the wallet terrence1)\n\n  \e[1mcardobot generate terrence2\e[0m\n    (generates a new wallet called terrence2)\n\n  \e[1mcardobot logs terrence1\e[0m\n    (outputs the logs of the terrence1 wallet in csv format)\n\n  \e[1mcardobot send terrence1 2 5 addrxxxxxxxxx\e[0m\n    (sends from the terrence1 wallet 2 transactions of 5 ADA to the address)\n\n  \e[1mcardobot multisend terrence 5 addrxxxxxxxxx\e[0m\n    (sends from all wallets that start with terrence 5 ADA to the address)\n\n"
+eg.\n  \e[1mcardobot check terrence1\e[0m\n    (checks the balance of the wallet terrence1)\n\n  \e[1mcardobot generate terrence2\e[0m\n    (generates a new wallet called terrence2)\n\n  \e[1mcardobot logs terrence1\e[0m\n    (outputs the logs of the terrence1 wallet in csv format)\n\n  \e[1mcardobot send terrence1 2 5 addrxxxxxxxxx\e[0m\n    (sends from the terrence1 wallet 2 transactions of 5 ADA to the address)\n\n  \e[1mcardobot multisend terrence 5 5 addrxxxxxxxxx\e[0m\n    (sends 5 transactions of 5 ADA from all wallets that start with terrence to the address)\n\n"
 
 }
 
 
 if [[ "$1" == "send" ]]; then
     send $2 $3 $4 $5 $6
-elif [[ "$1" == "multisend" ]]; then
+elif [[ "$1" == "oldmultisend" ]]; then
     multisend $2 $3 $4 $5
+elif [[ "$1" == "multisend" ]]; then
+    newmultisend $2 $3 $4 $5 $6
 elif [[ "$1" == "check" ]]; then
     check $2
 elif [[ "$1" == "generate" ]]; then
