@@ -532,6 +532,8 @@ function newmultisend {
 
         nohup cardobot send ${ADDR_NAME} $2 $3 $4 $5 2>&1 > ${ADDR_NAME}.out &
 
+        sleep 0.1
+
     done
 
 }
