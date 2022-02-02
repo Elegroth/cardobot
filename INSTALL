@@ -18,7 +18,14 @@ else
 fi
 
 if [[ ! -z `ls /usr/bin/cardobot` ]]; then
-    echo "Cardobot Already Installed"
+    echo "Cardobot Already Installed, Updating..."
+    sudo bash -c "cp ./bin/cardobot /usr/bin/cardobot"
+    if [[ `echo $?` == '0' ]]; then
+        echo -e "Cardobot Successfully Installed!!!\n\nPlease either get a new ssh session or source your ~/.bash_profile file to ensure CARDO_HOME is set."
+    else
+        echo "You do not have permission to copy binaries, please rerun with elevated permissions..."
+        exit
+    fi
 else
     sudo bash -c "cp ./bin/cardobot /usr/bin/cardobot"
     if [[ `echo $?` == '0' ]]; then
