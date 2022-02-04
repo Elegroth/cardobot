@@ -745,42 +745,50 @@ function multiempty {
                 num=$[$num+1]
             done
 
-            cardano-cli query protocol-parameters \
-            --mainnet \
-            --out-file $CARDO_HOME/transactions/${ADDR_NAME}/protocol${i}.json
+            if [[ $TOTALADA == '0' ]]; then
 
-            echo "cardano-cli transaction build-raw ${TXIN[*]} --tx-out ${OUTPUT_ADDR}+0${SENDALL} --fee 0 --out-file $CARDO_HOME/transactions/${ADDR_NAME}/tx${i}.draft" > $CARDO_HOME/transactions/${ADDR_NAME}/build_draft_${i}.sh
-            chmod 755 $CARDO_HOME/transactions/${ADDR_NAME}/build_draft_${i}.sh
-            $CARDO_HOME/transactions/${ADDR_NAME}/build_draft_${i}.sh
+                echo -e "Total ADA for ${ADDR_NAME} is less than 1, skipping..."
 
-            cardano-cli transaction calculate-min-fee \
-            --tx-body-file $CARDO_HOME/transactions/${ADDR_NAME}/tx${i}.draft \
-            --tx-in-count $TXCOUNT \
-            --tx-out-count 1 \
-            --witness-count $TXCOUNT \
-            --byron-witness-count 0 \
-            --mainnet \
-            --protocol-params-file $CARDO_HOME/transactions/${ADDR_NAME}/protocol${i}.json | tee $CARDO_HOME/transactions/${ADDR_NAME}/fees${i}
+            else
 
-            TXFEE=$(cat $CARDO_HOME/transactions/${ADDR_NAME}/fees${i} | awk '{print $1}')
-            ADABACK=$(($TOTALADA - $TXFEE))
+                cardano-cli query protocol-parameters \
+                --mainnet \
+                --out-file $CARDO_HOME/transactions/${ADDR_NAME}/protocol${i}.json
 
-            echo "cardano-cli transaction build-raw ${TXIN[*]} --tx-out ${OUTPUT_ADDR}+${ADABACK}${SENDALL} --fee ${TXFEE} --out-file $CARDO_HOME/transactions/${ADDR_NAME}/tx${i}.raw" > $CARDO_HOME/transactions/${ADDR_NAME}/build_raw_${i}.sh
-            chmod 755 $CARDO_HOME/transactions/${ADDR_NAME}/build_raw_${i}.sh
-            $CARDO_HOME/transactions/${ADDR_NAME}/build_raw_${i}.sh
+                echo "cardano-cli transaction build-raw ${TXIN[*]} --tx-out ${OUTPUT_ADDR}+0${SENDALL} --fee 0 --out-file $CARDO_HOME/transactions/${ADDR_NAME}/tx${i}.draft" > $CARDO_HOME/transactions/${ADDR_NAME}/build_draft_${i}.sh
+                chmod 755 $CARDO_HOME/transactions/${ADDR_NAME}/build_draft_${i}.sh
+                $CARDO_HOME/transactions/${ADDR_NAME}/build_draft_${i}.sh
 
-            cardano-cli transaction sign \
-            --tx-body-file $CARDO_HOME/transactions/${ADDR_NAME}/tx${i}.raw \
-            --signing-key-file $CARDO_HOME/wallets/${ADDR_NAME}.skey \
-            --mainnet \
-            --out-file $CARDO_HOME/transactions/${ADDR_NAME}/tx${i}.signed
+                cardano-cli transaction calculate-min-fee \
+                --tx-body-file $CARDO_HOME/transactions/${ADDR_NAME}/tx${i}.draft \
+                --tx-in-count $TXCOUNT \
+                --tx-out-count 1 \
+                --witness-count $TXCOUNT \
+                --byron-witness-count 0 \
+                --mainnet \
+                --protocol-params-file $CARDO_HOME/transactions/${ADDR_NAME}/protocol${i}.json | tee $CARDO_HOME/transactions/${ADDR_NAME}/fees${i}
 
-            cardano-cli transaction submit \
-            --tx-file $CARDO_HOME/transactions/${ADDR_NAME}/tx${i}.signed \
-            --mainnet
+                TXFEE=$(cat $CARDO_HOME/transactions/${ADDR_NAME}/fees${i} | awk '{print $1}')
+                ADABACK=$(($TOTALADA - $TXFEE))
 
-            TXSENTDATE=$(date +%T)
-            echo "Transaction for $ADDR_NAME SENT at $TXSENTDATE!"
+                echo "cardano-cli transaction build-raw ${TXIN[*]} --tx-out ${OUTPUT_ADDR}+${ADABACK}${SENDALL} --fee ${TXFEE} --out-file $CARDO_HOME/transactions/${ADDR_NAME}/tx${i}.raw" > $CARDO_HOME/transactions/${ADDR_NAME}/build_raw_${i}.sh
+                chmod 755 $CARDO_HOME/transactions/${ADDR_NAME}/build_raw_${i}.sh
+                $CARDO_HOME/transactions/${ADDR_NAME}/build_raw_${i}.sh
+
+                cardano-cli transaction sign \
+                --tx-body-file $CARDO_HOME/transactions/${ADDR_NAME}/tx${i}.raw \
+                --signing-key-file $CARDO_HOME/wallets/${ADDR_NAME}.skey \
+                --mainnet \
+                --out-file $CARDO_HOME/transactions/${ADDR_NAME}/tx${i}.signed
+
+                cardano-cli transaction submit \
+                --tx-file $CARDO_HOME/transactions/${ADDR_NAME}/tx${i}.signed \
+                --mainnet
+
+                TXSENTDATE=$(date +%T)
+                echo "Transaction for $ADDR_NAME SENT at $TXSENTDATE!"
+
+            fi
 
             i=$(($i + 1))
 
@@ -846,41 +854,49 @@ function multiempty {
 
             TOTALADA=$(IFS=+; echo "$((${TOTALADA_BF[*]}))")
 
-            while [[ "$TX_DONE" == "FALSE" ]]; do
+            if [[ $TOTALADA == '0' ]]; then
 
-                UTXO_AF=$(cardano-cli query utxo --mainnet --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
+                i=$(($i + 1))
+                
+            else
 
-                TOTALADA_AF=()
+                while [[ "$TX_DONE" == "FALSE" ]]; do
 
-                while IFS= read -r line; do
+                    UTXO_AF=$(cardano-cli query utxo --mainnet --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
 
-                    if [[ `echo $line | awk '{print $1}'` =~ ^[[:xdigit:]]{64}$ ]]; then
-                        TXAMT=$(echo $line | awk '{print $3}')
-                        TOTALADA_AF+=($TXAMT)
-                        TXCOUNT=$[$TXCOUNT+1]
+                    TOTALADA_AF=()
+
+                    while IFS= read -r line; do
+
+                        if [[ `echo $line | awk '{print $1}'` =~ ^[[:xdigit:]]{64}$ ]]; then
+                            TXAMT=$(echo $line | awk '{print $3}')
+                            TOTALADA_AF+=($TXAMT)
+                            TXCOUNT=$[$TXCOUNT+1]
+                        fi
+
+                    done <<< "${UTXO_AF}"
+
+                    TOTALADA_AF_DONE=$(IFS=+; echo "$((${TOTALADA_AF[*]}))")
+
+                    if [[ "$TOTALADA_AF_DONE" != "$TOTALADA" ]]; then
+                        TX_DONE="TRUE"
                     fi
 
-                done <<< "${UTXO_AF}"
+                    rm -rf $CARDO_HOME/transactions/${ADDR_NAME}/utxo${i}
 
-                TOTALADA_AF_DONE=$(IFS=+; echo "$((${TOTALADA_AF[*]}))")
+                done
 
-                if [[ "$TOTALADA_AF_DONE" != "$TOTALADA" ]]; then
-                    TX_DONE="TRUE"
-                fi
+                i=$(($i + 1))
+                TXDONEDATE=$(date +%T)
+                echo -e "Transaction for $ADDR_NAME CONFIRMED at $TXDONEDATE!"
 
-                rm -rf $CARDO_HOME/transactions/${ADDR_NAME}/utxo${i}
+                rm -rf $CARDO_HOME/transactions/${ADDR_NAME}/*
 
-            done
+                line_number=$(cat $CARDO_HOME/logs/${ADDR_NAME}_tx_log.csv | wc -l)
 
-            i=$(($i + 1))
-            TXDONEDATE=$(date +%T)
-            echo -e "Transaction for $ADDR_NAME CONFIRMED at $TXDONEDATE!"
-
-            rm -rf $CARDO_HOME/transactions/${ADDR_NAME}/*
-
-            line_number=$(cat $CARDO_HOME/logs/${ADDR_NAME}_tx_log.csv | wc -l)
-
-            echo "$line_number,`echo "scale = 2; $TOTALADA / 1000000" | bc`,`echo "scale = 3; $TXFEE / 1000000" | bc | sed 's/^\$CARDO_HOME/0$CARDO_HOME/'`,$PAYMENT_ADDR,$OUTPUT_ADDR,$(date +%T)" >> $CARDO_HOME/logs/${ADDR_NAME}_tx_log.csv
+                echo "$line_number,`echo "scale = 2; $TOTALADA / 1000000" | bc`,`echo "scale = 3; $TXFEE / 1000000" | bc | sed 's/^\$CARDO_HOME/0$CARDO_HOME/'`,$PAYMENT_ADDR,$OUTPUT_ADDR,$(date +%T)" >> $CARDO_HOME/logs/${ADDR_NAME}_tx_log.csv
+            
+            fi
 
         done
 
