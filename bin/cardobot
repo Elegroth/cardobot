@@ -152,6 +152,123 @@ function send {
     done
 }
 
+function nochecksend {
+    
+    PAYMENT_ADDR=$(cat $CARDO_HOME/wallets/$1.addr)
+    OUTPUT_ADDR=$4
+    ADA_OUT=$(echo "($3 * 1000000) / 1" | bc)
+
+    i=0
+
+    if [ ! -f $CARDO_HOME/logs/$1_tx_log.csv ]; then
+        touch $CARDO_HOME/logs/$1_tx_log.csv
+        echo "txid,ada_sent,fees,from_addr,to_addr,timestamp" > $CARDO_HOME/logs/$1_tx_log.csv
+    fi
+
+    while [ $i -lt $2 ]; do
+
+        mkdir -p $CARDO_HOME/transactions/$1/
+
+        UTXO=$(cardano-cli query utxo --mainnet --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
+
+        TOTALADA_BF=()
+        TXPOLIC_BF=()
+        TXIN=()
+        TXCOUNT=0
+
+        while IFS= read -r line; do
+
+            if [[ `echo $line | awk '{print $1}'` =~ ^[[:xdigit:]]{64}$ ]]; then
+                TXHASH=$(echo $line | awk '{print $1}')
+                TXID=$(echo $line | awk '{print $2}')
+                TXAMT=$(echo $line | awk '{print $3}')
+
+                TXIN+=("--tx-in \"${TXHASH}#${TXID}\"")
+                TOTALADA_BF+=($TXAMT)
+                TXCOUNT=$[$TXCOUNT+1]
+            elif [[ `echo $line | awk '{print $1}'` != "TxOutDatumNone" ]]; then
+                TXPOLIC_BF+=($(echo $line | awk '{print $2}'))
+            fi
+
+        done <<< "${UTXO}"
+
+        TXPOLIC=($(echo "${TXPOLIC_BF[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
+
+        TXTOKAMT=()
+
+        for tok in ${TXPOLIC[@]}; do
+            TOKLIST=$(echo "${UTXO}" | grep -w $tok)
+            TOKAMT_BF=()
+
+            while IFS= read -r line; do
+                TOKAMT_BF+=($(echo $line | awk '{print $1}'))
+            done <<< "${TOKLIST}"
+
+            TXTOKAMT+=($(IFS=+; echo "$((${TOKAMT_BF[*]}))"))
+        done
+
+        TOTALADA=$(IFS=+; echo "$((${TOTALADA_BF[*]}))")
+        num=0
+
+        SENDALL=""
+        SENDSELF=""
+
+        while [[ $num -lt ${#TXPOLIC[@]} ]]; do
+            if [[ "$5" == "--send-all" ]]; then
+                SENDALL="${SENDALL}+\"${TXTOKAMT[$num]} ${TXPOLIC[$num]}\""
+            else
+                SENDSELF="${SENDSELF}+\"${TXTOKAMT[$num]} ${TXPOLIC[$num]}\""
+            fi
+
+            num=$[$num+1]
+        done
+
+        cardano-cli query protocol-parameters \
+        --mainnet \
+        --out-file $CARDO_HOME/transactions/$1/protocol${i}.json
+
+        echo "cardano-cli transaction build-raw ${TXIN[*]} --tx-out ${OUTPUT_ADDR}+${ADA_OUT}${SENDALL} --tx-out ${PAYMENT_ADDR}+0${SENDSELF} --fee 0 --out-file $CARDO_HOME/transactions/$1/tx${i}.draft" > $CARDO_HOME/transactions/$1/build_draft_${i}.sh
+        chmod 755 $CARDO_HOME/transactions/$1/build_draft_${i}.sh
+        $CARDO_HOME/transactions/$1/build_draft_${i}.sh
+
+        cardano-cli transaction calculate-min-fee \
+        --tx-body-file $CARDO_HOME/transactions/$1/tx${i}.draft \
+        --tx-in-count $TXCOUNT \
+        --tx-out-count 1 \
+        --witness-count $TXCOUNT \
+        --byron-witness-count 0 \
+        --mainnet \
+        --protocol-params-file $CARDO_HOME/transactions/$1/protocol${i}.json | tee $CARDO_HOME/transactions/$1/fees${i}
+
+        TXFEE=$(cat $CARDO_HOME/transactions/$1/fees${i} | awk '{print $1}')
+        ADABACK=$(($TOTALADA - $ADA_OUT - $TXFEE))
+
+        echo "cardano-cli transaction build-raw ${TXIN[*]} --tx-out ${OUTPUT_ADDR}+${ADA_OUT}${SENDALL} --tx-out ${PAYMENT_ADDR}+${ADABACK}${SENDSELF} --fee ${TXFEE} --out-file $CARDO_HOME/transactions/$1/tx${i}.raw" > $CARDO_HOME/transactions/$1/build_raw_${i}.sh
+        chmod 755 $CARDO_HOME/transactions/$1/build_raw_${i}.sh
+        $CARDO_HOME/transactions/$1/build_raw_${i}.sh
+
+        cardano-cli transaction sign \
+        --tx-body-file $CARDO_HOME/transactions/$1/tx${i}.raw \
+        --signing-key-file $CARDO_HOME/wallets/$1.skey \
+        --mainnet \
+        --out-file $CARDO_HOME/transactions/$1/tx${i}.signed
+
+        cardano-cli transaction submit \
+        --tx-file $CARDO_HOME/transactions/$1/tx${i}.signed \
+        --mainnet
+
+        TXSENTDATE=$(date +%T)
+        echo "Transaction #`expr $i + 1` SENT at $TXSENTDATE!"
+
+        rm -rf $CARDO_HOME/transactions/$1/*
+
+        line_number=$(cat $CARDO_HOME/logs/$1_tx_log.csv | wc -l)
+
+        echo "$line_number,`echo "scale = 2; $ADA_OUT / 1000000" | bc`,`echo "scale = 3; $TXFEE / 1000000" | bc | sed 's/^\$CARDO_HOME/0$CARDO_HOME/'`,$PAYMENT_ADDR,$OUTPUT_ADDR,$(date +%T)" >> $CARDO_HOME/logs/$1_tx_log.csv
+
+    done
+}
+
 function empty {
     
     PAYMENT_ADDR=$(cat $CARDO_HOME/wallets/$1.addr)
@@ -856,8 +973,9 @@ function multiempty {
 
             if [[ $TOTALADA == '0' ]]; then
 
+                rm -rf $CARDO_HOME/transactions/${ADDR_NAME}/utxo${i}
                 i=$(($i + 1))
-                
+
             else
 
                 while [[ "$TX_DONE" == "FALSE" ]]; do
@@ -890,13 +1008,13 @@ function multiempty {
                 TXDONEDATE=$(date +%T)
                 echo -e "Transaction for $ADDR_NAME CONFIRMED at $TXDONEDATE!"
 
-                rm -rf $CARDO_HOME/transactions/${ADDR_NAME}/*
-
                 line_number=$(cat $CARDO_HOME/logs/${ADDR_NAME}_tx_log.csv | wc -l)
 
                 echo "$line_number,`echo "scale = 2; $TOTALADA / 1000000" | bc`,`echo "scale = 3; $TXFEE / 1000000" | bc | sed 's/^\$CARDO_HOME/0$CARDO_HOME/'`,$PAYMENT_ADDR,$OUTPUT_ADDR,$(date +%T)" >> $CARDO_HOME/logs/${ADDR_NAME}_tx_log.csv
             
             fi
+
+            rm -rf $CARDO_HOME/transactions/${ADDR_NAME}/*
 
         done
 
@@ -919,7 +1037,7 @@ function newmultisend {
             echo "txid,ada_sent,fees,from_addr,to_addr,timestamp" > $CARDO_HOME/logs/${ADDR_NAME}_tx_log.csv
         fi
 
-        nohup cardobot send ${ADDR_NAME} $2 $3 $4 $5 2>&1 > ${ADDR_NAME}.out &
+        nohup cardobot nochecksend ${ADDR_NAME} 1 $2 $3 $4 2>&1 > ${ADDR_NAME}.out &
 
         sleep 0.1
 
@@ -1039,6 +1157,8 @@ eg.\n  \e[1mcardobot check terrence1\e[0m\n    (checks the balance of the wallet
 
 if [[ "$1" == "send" ]]; then
     send $2 $3 $4 $5 $6
+elif [[ "$1" == "nochecksend" ]]; then
+    nochecksend $2 $3 $4 $5 $6
 elif [[ "$1" == "multisend" ]]; then
     multisend $2 $3 $4 $5
 elif [[ "$1" == "multiout" ]]; then
