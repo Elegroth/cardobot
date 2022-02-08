@@ -165,7 +165,7 @@ function nochecksend {
         echo "txid,ada_sent,fees,from_addr,to_addr,timestamp" > $CARDO_HOME/logs/$1_tx_log.csv
     fi
 
-    while [ $i -lt $2 ]; do
+    while [ $i -lt 1 ]; do
 
         mkdir -p $CARDO_HOME/transactions/$1/
 
@@ -259,6 +259,8 @@ function nochecksend {
 
         TXSENTDATE=$(date +%T)
         echo "Transaction #`expr $i + 1` SENT at $TXSENTDATE!"
+
+        i=$(($i + 1))
 
         rm -rf $CARDO_HOME/transactions/$1/*
 
@@ -702,10 +704,12 @@ function multiout {
         done
 
         TXOUT=()
+        TXOUTCOUNT=0
 
         for addr in "${OUTPUT_LIST[@]}"; do
 
             TXOUT+=("--tx-out \"${addr}+${ADA_OUT_INIT}\"")
+            TXOUTCOUNT=$[$TXOUTCOUNT+1]
 
         done
 
@@ -720,7 +724,7 @@ function multiout {
         cardano-cli transaction calculate-min-fee \
         --tx-body-file $CARDO_HOME/transactions/$1/tx${i}.draft \
         --tx-in-count $TXCOUNT \
-        --tx-out-count 1 \
+        --tx-out-count $TXOUTCOUNT \
         --witness-count $TXCOUNT \
         --byron-witness-count 0 \
         --mainnet \
