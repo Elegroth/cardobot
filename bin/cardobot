@@ -1,6 +1,8 @@
 #!/bin/bash
 #set -x
 
+version='0.3.1'
+
 mkdir -p $CARDO_HOME/transactions/
 mkdir -p $CARDO_HOME/wallets/
 mkdir -p $CARDO_HOME/logs/
@@ -1108,10 +1110,90 @@ function check {
     fi
 }
 
-function generate {
+function checkall {
     wallet_name=$1
 
-    if [[ ! -z `ls $CARDO_HOME/wallets/${wallet_name}.addr` ]]; then
+    if [[ ! -z "$1" ]]; then
+        check_wallet=($(cd $CARDO_HOME/wallets/ && ls ${wallet_name}*.addr 2>/dev/null))
+    else
+        check_wallet=($(cd $CARDO_HOME/wallets/ && ls *.addr 2>/dev/null))
+    fi
+
+    if [[ -z "${check_wallet[*]}" ]]; then
+
+        echo -e "\nNo wallets found starting with \"${wallet_name}\" ..."
+
+    fi
+
+    for addr in "${check_wallet[@]}"; do
+
+        wallet_addr=$(cat $CARDO_HOME/wallets/$addr)
+
+        echo -e "\n${addr%.*} | $wallet_addr"
+
+        UTXO=$(cardano-cli query utxo --mainnet --address $wallet_addr | grep lovelace | tr '+' '\n')
+
+        TOTALADA_BF=()
+        TXPOLIC_BF=()
+
+        while IFS= read -r line; do
+
+            if [[ `echo $line | awk '{print $1}'` =~ ^[[:xdigit:]]{64}$ ]]; then
+                TXAMT=$(echo $line | awk '{print $3}')
+                TOTALADA_BF+=($TXAMT)
+            elif [[ `echo $line | awk '{print $1}'` != "TxOutDatumNone" ]]; then
+                TXPOLIC_BF+=($(echo $line | awk '{print $2}'))
+            fi
+
+        done <<< "${UTXO}"
+
+        TXPOLIC=($(echo "${TXPOLIC_BF[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
+
+        TXTOKAMT=()
+
+        for tok in ${TXPOLIC[@]}; do
+            TOKLIST=$(echo "${UTXO}" | grep -w $tok)
+            TOKAMT_BF=()
+
+            while IFS= read -r line; do
+                TOKAMT_BF+=($(echo $line | awk '{print $1}'))
+            done <<< "${TOKLIST}"
+
+            TXTOKAMT+=($(IFS=+; echo "$((${TOKAMT_BF[*]}))"))
+        done
+
+        TOTALADA=$(IFS=+; echo "$((${TOTALADA_BF[*]}))")
+        num=0
+
+        SENDSELF=()
+
+        while [[ $num -lt ${#TXPOLIC[@]} ]]; do
+            SENDSELF+=("${TXTOKAMT[$num]} ${TXPOLIC[$num]}\n")
+
+            num=$[$num+1]
+        done
+
+        TOTALADA_BF=($(cardano-cli query utxo --mainnet --address ${wallet_addr} | grep lovelace | awk '{print $3}'))
+        TOTALADA=$(IFS=+; echo "$((${TOTALADA_BF[*]}))")
+
+        echo -e "Remaining ADA: `echo "scale = 2; $TOTALADA / 1000000" | bc`"
+
+        if [[ "${#TXPOLIC[@]}" == "0" ]]; then
+            echo -e "NFTs in Wallet: None"
+        else
+            echo -e "NFTs in Wallet:\n ${SENDSELF[@]}"
+        fi
+
+    done
+
+    echo ""
+}
+
+function generate {
+    wallet_name=$1
+    check_wallet=`ls $CARDO_HOME/wallets/${wallet_name}.addr 2>/dev/null`
+
+    if [[ ! -z ${check_wallet} ]]; then
         echo "Wallet already exists!!"
         exit
     else
@@ -1121,8 +1203,114 @@ function generate {
         cardano-cli address build --payment-verification-key-file $CARDO_HOME/wallets/${wallet_name}.vkey --stake-verification-key-file $CARDO_HOME/wallets/${wallet_name}_stake.vkey --out-file $CARDO_HOME/wallets/${wallet_name}.addr --mainnet
 
         echo -e "\nYour Wallet Address is:\n`cat $CARDO_HOME/wallets/${wallet_name}.addr`"
+        echo -e ""
     
     fi
+}
+
+function purge {
+    wallet_name=$1
+    
+    echo -e "WARNING!!! - If you have not backed up this wallet, it will PERMANENTLY no longer be accessible.\nType 'agree' to continue...\n"
+
+    read agreetodelete
+
+    if [[ "${agreetodelete}" == "agree" ]]; then
+
+        check_wallet=`ls $CARDO_HOME/wallets/${wallet_name}.addr 2>/dev/null`
+
+        if [[ ! -z ${check_wallet} ]]; then
+            rm -rf $CARDO_HOME/wallets/${wallet_name}.vkey
+            rm -rf $CARDO_HOME/wallets/${wallet_name}.skey
+            rm -rf $CARDO_HOME/wallets/${wallet_name}_stake.vkey
+            rm -rf $CARDO_HOME/wallets/${wallet_name}_stake.skey
+            rm -rf $CARDO_HOME/wallets/${wallet_name}.addr
+
+            echo "Wallet $wallet_name has been permanently deleted..."
+        else
+            echo "Wallet does not exist!!"
+            exit
+        fi
+    
+    else
+
+        echo -e "Did not agree to delete... Exiting..."
+        exit
+
+    fi   
+
+}
+
+function multipurge {
+    wallet_name=$1
+    
+    echo -e "WARNING!!! - If you have not backed up these wallets, ALL will PERMANENTLY no longer be accessible.\nType 'agree' to continue...\n"
+
+    read agreetodelete
+
+    if [[ "${agreetodelete}" == "agree" ]]; then
+
+        check_wallet=($(cd $CARDO_HOME/wallets/ && ls ${wallet_name}*.addr 2>/dev/null))
+
+        if [[ ! -z "${check_wallet[*]}" ]]; then
+
+            for wallet in "${check_wallet[@]}"; do
+
+                rm -rf $CARDO_HOME/wallets/${wallet%.*}.vkey
+                rm -rf $CARDO_HOME/wallets/${wallet%.*}.skey
+                rm -rf $CARDO_HOME/wallets/${wallet%.*}_stake.vkey
+                rm -rf $CARDO_HOME/wallets/${wallet%.*}_stake.skey
+                rm -rf $CARDO_HOME/wallets/${wallet%.*}.addr
+
+                echo -e "Wallet ${wallet%.*} has been permanently deleted..."
+
+            done
+        else
+            echo "Wallets do not exist!!"
+            exit
+        fi
+    
+    else
+
+        echo -e "Did not agree to delete... Exiting..."
+        exit
+        
+    fi   
+
+}
+
+function multigen {
+    wallet_name=$1
+    wallet_num=$2
+
+    i=0
+
+    rm -rf ./${wallet_name}_addrlist
+    touch ./${wallet_name}_addrlist
+
+    while [[ $i -lt $wallet_num ]];
+    do
+
+        if [[ ! -z `ls $CARDO_HOME/wallets/${wallet_name}${i}.addr 2>/dev/null` ]]; then
+
+            echo "${wallet_name}${i} already exists... Proceeding..."
+            echo -e `cat $CARDO_HOME/wallets/${wallet_name}${i}.addr` >> ./${wallet_name}_addrlist
+
+        else
+
+            cardano-cli address key-gen --verification-key-file $CARDO_HOME/wallets/${wallet_name}${i}.vkey --signing-key-file $CARDO_HOME/wallets/${wallet_name}${i}.skey
+            cardano-cli stake-address key-gen --verification-key-file $CARDO_HOME/wallets/${wallet_name}${i}_stake.vkey --signing-key-file $CARDO_HOME/wallets/${wallet_name}${i}_stake.skey
+            cardano-cli address build --payment-verification-key-file $CARDO_HOME/wallets/${wallet_name}${i}.vkey --stake-verification-key-file $CARDO_HOME/wallets/${wallet_name}${i}_stake.vkey --out-file $CARDO_HOME/wallets/${wallet_name}${i}.addr --mainnet
+
+            echo -e "\nWallet Address for ${wallet_name}${i}:\n`cat $CARDO_HOME/wallets/${wallet_name}${i}.addr`"
+
+            echo -e `cat $CARDO_HOME/wallets/${wallet_name}${i}.addr` >> ./${wallet_name}_addrlist
+    
+        fi
+
+        i=$(($i + 1))
+
+    done
 }
 
 function regen_test {
@@ -1135,13 +1323,34 @@ function regen_test {
 }
 
 function list {
-    wallet_list=$(cd $CARDO_HOME/wallets/ && ls *.addr)
 
-    echo -e "\nList of Wallets:\n\n${wallet_list}"
+    if [[ ! -z "$1" ]]; then
+        wallet_list=($(cd $CARDO_HOME/wallets/ && ls $1*.addr 2>/dev/null))
+    else
+        wallet_list=($(cd $CARDO_HOME/wallets/ && ls *.addr 2>/dev/null))
+    fi
+
+    if [[ ! -z "${wallet_list[@]}" ]]; then
+
+        echo -e "\nList of Wallets:\n"
+
+        for wallet in "${wallet_list[@]}"; do
+            echo -e "${wallet} | `cat $CARDO_HOME/wallets/$wallet`"
+        done
+    
+    else
+
+        echo -e "\nNo wallets found starting with \"$1\" ...\n"
+
+    fi
 }
 
 function logs {
     cat $CARDO_HOME/logs/$1_tx_log.csv
+}
+
+function version {
+    echo "cardobot $version - by elegroth"
 }
 
 function helpme {
@@ -1182,9 +1391,19 @@ elif [[ "$1" == "regen" ]]; then
 elif [[ "$1" == "logs" ]]; then
     logs $2
 elif [[ "$1" == "list" ]]; then
-    list
+    list $2
+elif [[ "$1" == "checkall" ]]; then
+    checkall $2
+elif [[ "$1" == "purge" ]]; then
+    purge $2
+elif [[ "$1" == "multipurge" ]]; then
+    multipurge $2
+elif [[ "$1" == "multigen" ]]; then
+    multigen $2 $3
 elif [[ "$1" =~ ^(--help|-help|-h|--h|help) ]]; then
     helpme
+elif [[ "$1" =~ ^(--version|-version|-v|--v|version) ]]; then
+    version
 else
     echo "COMMAND NOT VALID!!!  EXITING..."
     exit
