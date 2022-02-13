@@ -1353,6 +1353,27 @@ function version {
     echo "cardobot $version - by elegroth"
 }
 
+function upgrade {
+
+    echo -e "Would you like to try upgrading cardobot?\ny/n"
+    read upanswer
+
+    if [[ $upanswer == "y" ]]; then
+        current_dir=$(pwd)
+
+        git clone git@github.com:Elegroth/cardobot.git /tmp/cardobot
+        cd /tmp/cardobot && ./INSTALL
+        rm -rf /tmp/cardobot
+
+        cd $current_dir
+
+    else
+        echo -e "\nNot upgrading... Exiting..."
+        exit
+    fi
+
+}
+
 function helpme {
 
     printf "\nHow to use Cardobot...\n\nValid Options:
@@ -1396,6 +1417,8 @@ elif [[ "$1" == "checkall" ]]; then
     checkall $2
 elif [[ "$1" == "purge" ]]; then
     purge $2
+elif [[ "$1" == "upgrade" ]]; then
+    upgrade
 elif [[ "$1" == "multipurge" ]]; then
     multipurge $2
 elif [[ "$1" == "multigen" ]]; then
