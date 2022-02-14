@@ -1,7 +1,13 @@
 #!/bin/bash
 #set -x
 
-version='0.3.3'
+version='0.3.4'
+
+if [[ $TESTNET_ENABLED == 'true' ]]; then
+    NODE_MAGIC="--testnet-magic 1097911063"
+else
+    NODE_MAGIC="--mainnet"
+fi
 
 mkdir -p $CARDO_HOME/transactions/
 mkdir -p $CARDO_HOME/wallets/
@@ -24,7 +30,7 @@ function send {
 
         mkdir -p $CARDO_HOME/transactions/$1/
 
-        UTXO=$(cardano-cli query utxo --mainnet --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
+        UTXO=$(cardano-cli query utxo ${NODE_MAGIC} --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
 
         TOTALADA_BF=()
         TXPOLIC_BF=()
@@ -79,7 +85,7 @@ function send {
         done
 
         cardano-cli query protocol-parameters \
-        --mainnet \
+        ${NODE_MAGIC} \
         --out-file $CARDO_HOME/transactions/$1/protocol${i}.json
 
         echo "cardano-cli transaction build-raw ${TXIN[*]} --tx-out ${OUTPUT_ADDR}+${ADA_OUT}${SENDALL} --tx-out ${PAYMENT_ADDR}+0${SENDSELF} --fee 0 --out-file $CARDO_HOME/transactions/$1/tx${i}.draft" > $CARDO_HOME/transactions/$1/build_draft_${i}.sh
@@ -92,7 +98,7 @@ function send {
         --tx-out-count 1 \
         --witness-count $TXCOUNT \
         --byron-witness-count 0 \
-        --mainnet \
+        ${NODE_MAGIC} \
         --protocol-params-file $CARDO_HOME/transactions/$1/protocol${i}.json | tee $CARDO_HOME/transactions/$1/fees${i}
 
         TXFEE=$(cat $CARDO_HOME/transactions/$1/fees${i} | awk '{print $1}')
@@ -105,7 +111,7 @@ function send {
         cardano-cli transaction sign \
         --tx-body-file $CARDO_HOME/transactions/$1/tx${i}.raw \
         --signing-key-file $CARDO_HOME/wallets/$1.skey \
-        --mainnet \
+        ${NODE_MAGIC} \
         --out-file $CARDO_HOME/transactions/$1/tx${i}.signed
 
         cardano-cli transaction submit \
@@ -119,7 +125,7 @@ function send {
 
         while [[ "$TX_DONE" == "FALSE" ]]; do
 
-            UTXO_AF=$(cardano-cli query utxo --mainnet --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
+            UTXO_AF=$(cardano-cli query utxo ${NODE_MAGIC} --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
 
             TOTALADA_AF=()
 
@@ -171,7 +177,7 @@ function nochecksend {
 
         mkdir -p $CARDO_HOME/transactions/$1/
 
-        UTXO=$(cardano-cli query utxo --mainnet --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
+        UTXO=$(cardano-cli query utxo ${NODE_MAGIC} --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
 
         TOTALADA_BF=()
         TXPOLIC_BF=()
@@ -226,7 +232,7 @@ function nochecksend {
         done
 
         cardano-cli query protocol-parameters \
-        --mainnet \
+        ${NODE_MAGIC} \
         --out-file $CARDO_HOME/transactions/$1/protocol${i}.json
 
         echo "cardano-cli transaction build-raw ${TXIN[*]} --tx-out ${OUTPUT_ADDR}+${ADA_OUT}${SENDALL} --tx-out ${PAYMENT_ADDR}+0${SENDSELF} --fee 0 --out-file $CARDO_HOME/transactions/$1/tx${i}.draft" > $CARDO_HOME/transactions/$1/build_draft_${i}.sh
@@ -239,7 +245,7 @@ function nochecksend {
         --tx-out-count 1 \
         --witness-count $TXCOUNT \
         --byron-witness-count 0 \
-        --mainnet \
+        ${NODE_MAGIC} \
         --protocol-params-file $CARDO_HOME/transactions/$1/protocol${i}.json | tee $CARDO_HOME/transactions/$1/fees${i}
 
         TXFEE=$(cat $CARDO_HOME/transactions/$1/fees${i} | awk '{print $1}')
@@ -252,7 +258,7 @@ function nochecksend {
         cardano-cli transaction sign \
         --tx-body-file $CARDO_HOME/transactions/$1/tx${i}.raw \
         --signing-key-file $CARDO_HOME/wallets/$1.skey \
-        --mainnet \
+        ${NODE_MAGIC} \
         --out-file $CARDO_HOME/transactions/$1/tx${i}.signed
 
         cardano-cli transaction submit \
@@ -289,7 +295,7 @@ function empty {
 
         mkdir -p $CARDO_HOME/transactions/$1/
 
-        UTXO=$(cardano-cli query utxo --mainnet --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
+        UTXO=$(cardano-cli query utxo ${NODE_MAGIC} --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
 
         TOTALADA_BF=()
         TXPOLIC_BF=()
@@ -339,7 +345,7 @@ function empty {
         done
 
         cardano-cli query protocol-parameters \
-        --mainnet \
+        ${NODE_MAGIC} \
         --out-file $CARDO_HOME/transactions/$1/protocol${i}.json
 
         echo "cardano-cli transaction build-raw ${TXIN[*]} --tx-out ${OUTPUT_ADDR}+0${SENDALL} --fee 0 --out-file $CARDO_HOME/transactions/$1/tx${i}.draft" > $CARDO_HOME/transactions/$1/build_draft_${i}.sh
@@ -352,7 +358,7 @@ function empty {
         --tx-out-count 1 \
         --witness-count $TXCOUNT \
         --byron-witness-count 0 \
-        --mainnet \
+        ${NODE_MAGIC} \
         --protocol-params-file $CARDO_HOME/transactions/$1/protocol${i}.json | tee $CARDO_HOME/transactions/$1/fees${i}
 
         TXFEE=$(cat $CARDO_HOME/transactions/$1/fees${i} | awk '{print $1}')
@@ -365,7 +371,7 @@ function empty {
         cardano-cli transaction sign \
         --tx-body-file $CARDO_HOME/transactions/$1/tx${i}.raw \
         --signing-key-file $CARDO_HOME/wallets/$1.skey \
-        --mainnet \
+        ${NODE_MAGIC} \
         --out-file $CARDO_HOME/transactions/$1/tx${i}.signed
 
         cardano-cli transaction submit \
@@ -379,7 +385,7 @@ function empty {
 
         while [[ "$TX_DONE" == "FALSE" ]]; do
 
-            UTXO_AF=$(cardano-cli query utxo --mainnet --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
+            UTXO_AF=$(cardano-cli query utxo ${NODE_MAGIC} --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
 
             TOTALADA_AF=()
 
@@ -438,7 +444,7 @@ function multisend {
 
             mkdir -p $CARDO_HOME/transactions/${ADDR_NAME}/
 
-            UTXO=$(cardano-cli query utxo --mainnet --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
+            UTXO=$(cardano-cli query utxo ${NODE_MAGIC} --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
             echo ${UTXO} > $CARDO_HOME/transactions/${ADDR_NAME}/utxo${i}
 
             TOTALADA_BF=()
@@ -494,7 +500,7 @@ function multisend {
             done
 
             cardano-cli query protocol-parameters \
-            --mainnet \
+            ${NODE_MAGIC} \
             --out-file $CARDO_HOME/transactions/${ADDR_NAME}/protocol${i}.json
 
             echo "cardano-cli transaction build-raw ${TXIN[*]} --tx-out ${OUTPUT_ADDR}+${ADA_OUT}${SENDALL} --tx-out ${PAYMENT_ADDR}+0${SENDSELF} --fee 0 --out-file $CARDO_HOME/transactions/${ADDR_NAME}/tx${i}.draft" > $CARDO_HOME/transactions/${ADDR_NAME}/build_draft_${i}.sh
@@ -507,7 +513,7 @@ function multisend {
             --tx-out-count 1 \
             --witness-count $TXCOUNT \
             --byron-witness-count 0 \
-            --mainnet \
+            ${NODE_MAGIC} \
             --protocol-params-file $CARDO_HOME/transactions/${ADDR_NAME}/protocol${i}.json | tee $CARDO_HOME/transactions/${ADDR_NAME}/fees${i}
 
             TXFEE=$(cat $CARDO_HOME/transactions/${ADDR_NAME}/fees${i} | awk '{print $1}')
@@ -520,7 +526,7 @@ function multisend {
             cardano-cli transaction sign \
             --tx-body-file $CARDO_HOME/transactions/${ADDR_NAME}/tx${i}.raw \
             --signing-key-file $CARDO_HOME/wallets/${ADDR_NAME}.skey \
-            --mainnet \
+            ${NODE_MAGIC} \
             --out-file $CARDO_HOME/transactions/${ADDR_NAME}/tx${i}.signed
 
             cardano-cli transaction submit \
@@ -596,7 +602,7 @@ function multisend {
 
             while [[ "$TX_DONE" == "FALSE" ]]; do
 
-                UTXO_AF=$(cardano-cli query utxo --mainnet --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
+                UTXO_AF=$(cardano-cli query utxo ${NODE_MAGIC} --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
 
                 TOTALADA_AF=()
 
@@ -654,7 +660,7 @@ function multiout {
 
         mkdir -p $CARDO_HOME/transactions/$1/
 
-        UTXO=$(cardano-cli query utxo --mainnet --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
+        UTXO=$(cardano-cli query utxo ${NODE_MAGIC} --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
 
         TOTALADA_BF=()
         TXPOLIC_BF=()
@@ -716,7 +722,7 @@ function multiout {
         done
 
         cardano-cli query protocol-parameters \
-        --mainnet \
+        ${NODE_MAGIC} \
         --out-file $CARDO_HOME/transactions/$1/protocol${i}.json
 
         echo "cardano-cli transaction build-raw ${TXIN[*]} ${TXOUT[*]} --tx-out ${PAYMENT_ADDR}+0${SENDSELF} --fee 0 --out-file $CARDO_HOME/transactions/$1/tx${i}.draft" > $CARDO_HOME/transactions/$1/build_draft_${i}.sh
@@ -729,7 +735,7 @@ function multiout {
         --tx-out-count $TXOUTCOUNT \
         --witness-count $TXCOUNT \
         --byron-witness-count 0 \
-        --mainnet \
+        ${NODE_MAGIC} \
         --protocol-params-file $CARDO_HOME/transactions/$1/protocol${i}.json | tee $CARDO_HOME/transactions/$1/fees${i}
 
         TXFEE=$(cat $CARDO_HOME/transactions/$1/fees${i} | awk '{print $1}')
@@ -742,7 +748,7 @@ function multiout {
         cardano-cli transaction sign \
         --tx-body-file $CARDO_HOME/transactions/$1/tx${i}.raw \
         --signing-key-file $CARDO_HOME/wallets/$1.skey \
-        --mainnet \
+        ${NODE_MAGIC} \
         --out-file $CARDO_HOME/transactions/$1/tx${i}.signed
 
         cardano-cli transaction submit \
@@ -756,7 +762,7 @@ function multiout {
 
         while [[ "$TX_DONE" == "FALSE" ]]; do
 
-            UTXO_AF=$(cardano-cli query utxo --mainnet --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
+            UTXO_AF=$(cardano-cli query utxo ${NODE_MAGIC} --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
 
             TOTALADA_AF=()
 
@@ -818,7 +824,7 @@ function multiempty {
 
             mkdir -p $CARDO_HOME/transactions/${ADDR_NAME}/
 
-            UTXO=$(cardano-cli query utxo --mainnet --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
+            UTXO=$(cardano-cli query utxo ${NODE_MAGIC} --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
             echo ${UTXO} > $CARDO_HOME/transactions/${ADDR_NAME}/utxo${i}
 
             TOTALADA_BF=()
@@ -875,7 +881,7 @@ function multiempty {
             else
 
                 cardano-cli query protocol-parameters \
-                --mainnet \
+                ${NODE_MAGIC} \
                 --out-file $CARDO_HOME/transactions/${ADDR_NAME}/protocol${i}.json
 
                 echo "cardano-cli transaction build-raw ${TXIN[*]} --tx-out ${OUTPUT_ADDR}+0${SENDALL} --fee 0 --out-file $CARDO_HOME/transactions/${ADDR_NAME}/tx${i}.draft" > $CARDO_HOME/transactions/${ADDR_NAME}/build_draft_${i}.sh
@@ -888,7 +894,7 @@ function multiempty {
                 --tx-out-count 1 \
                 --witness-count $TXCOUNT \
                 --byron-witness-count 0 \
-                --mainnet \
+                ${NODE_MAGIC} \
                 --protocol-params-file $CARDO_HOME/transactions/${ADDR_NAME}/protocol${i}.json | tee $CARDO_HOME/transactions/${ADDR_NAME}/fees${i}
 
                 TXFEE=$(cat $CARDO_HOME/transactions/${ADDR_NAME}/fees${i} | awk '{print $1}')
@@ -901,7 +907,7 @@ function multiempty {
                 cardano-cli transaction sign \
                 --tx-body-file $CARDO_HOME/transactions/${ADDR_NAME}/tx${i}.raw \
                 --signing-key-file $CARDO_HOME/wallets/${ADDR_NAME}.skey \
-                --mainnet \
+                ${NODE_MAGIC} \
                 --out-file $CARDO_HOME/transactions/${ADDR_NAME}/tx${i}.signed
 
                 cardano-cli transaction submit \
@@ -986,7 +992,7 @@ function multiempty {
 
                 while [[ "$TX_DONE" == "FALSE" ]]; do
 
-                    UTXO_AF=$(cardano-cli query utxo --mainnet --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
+                    UTXO_AF=$(cardano-cli query utxo ${NODE_MAGIC} --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
 
                     TOTALADA_AF=()
 
@@ -1056,7 +1062,7 @@ function check {
 
     echo -e "\nWallet Address: $wallet_addr"
 
-    UTXO=$(cardano-cli query utxo --mainnet --address ${wallet_addr} | grep lovelace | tr '+' '\n')
+    UTXO=$(cardano-cli query utxo ${NODE_MAGIC} --address ${wallet_addr} | grep lovelace | tr '+' '\n')
 
     TOTALADA_BF=()
     TXPOLIC_BF=()
@@ -1130,7 +1136,7 @@ function checkall {
 
         echo -e "\n${addr%.*} | $wallet_addr"
 
-        UTXO=$(cardano-cli query utxo --mainnet --address $wallet_addr | grep lovelace | tr '+' '\n')
+        UTXO=$(cardano-cli query utxo ${NODE_MAGIC} --address $wallet_addr | grep lovelace | tr '+' '\n')
 
         TOTALADA_BF=()
         TXPOLIC_BF=()
