@@ -116,7 +116,7 @@ function send {
 
         cardano-cli transaction submit \
         --tx-file $CARDO_HOME/transactions/$1/tx${i}.signed \
-        --mainnet
+        ${NODE_MAGIC}
 
         TXSENTDATE=$(date +%T)
         echo "Transaction #`expr $i + 1` SENT at $TXSENTDATE!"
@@ -263,7 +263,7 @@ function nochecksend {
 
         cardano-cli transaction submit \
         --tx-file $CARDO_HOME/transactions/$1/tx${i}.signed \
-        --mainnet
+        ${NODE_MAGIC}
 
         TXSENTDATE=$(date +%T)
         echo "Transaction #`expr $i + 1` SENT at $TXSENTDATE!"
@@ -376,7 +376,7 @@ function empty {
 
         cardano-cli transaction submit \
         --tx-file $CARDO_HOME/transactions/$1/tx${i}.signed \
-        --mainnet
+        ${NODE_MAGIC}
 
         TXSENTDATE=$(date +%T)
         echo "Transaction #`expr $i + 1` SENT at $TXSENTDATE!"
@@ -531,7 +531,7 @@ function multisend {
 
             cardano-cli transaction submit \
             --tx-file $CARDO_HOME/transactions/${ADDR_NAME}/tx${i}.signed \
-            --mainnet
+            ${NODE_MAGIC}
 
             TXSENTDATE=$(date +%T)
             echo "Transaction for $ADDR_NAME SENT at $TXSENTDATE!"
@@ -753,7 +753,7 @@ function multiout {
 
         cardano-cli transaction submit \
         --tx-file $CARDO_HOME/transactions/$1/tx${i}.signed \
-        --mainnet
+        ${NODE_MAGIC}
 
         TXSENTDATE=$(date +%T)
         echo "Transaction #`expr $i + 1` SENT at $TXSENTDATE!"
@@ -912,7 +912,7 @@ function multiempty {
 
                 cardano-cli transaction submit \
                 --tx-file $CARDO_HOME/transactions/${ADDR_NAME}/tx${i}.signed \
-                --mainnet
+                ${NODE_MAGIC}
 
                 TXSENTDATE=$(date +%T)
                 echo "Transaction for $ADDR_NAME SENT at $TXSENTDATE!"
@@ -1204,7 +1204,7 @@ function generate {
 
         cardano-cli address key-gen --verification-key-file $CARDO_HOME/wallets/${wallet_name}.vkey --signing-key-file $CARDO_HOME/wallets/${wallet_name}.skey
         cardano-cli stake-address key-gen --verification-key-file $CARDO_HOME/wallets/${wallet_name}_stake.vkey --signing-key-file $CARDO_HOME/wallets/${wallet_name}_stake.skey
-        cardano-cli address build --payment-verification-key-file $CARDO_HOME/wallets/${wallet_name}.vkey --stake-verification-key-file $CARDO_HOME/wallets/${wallet_name}_stake.vkey --out-file $CARDO_HOME/wallets/${wallet_name}.addr --mainnet
+        cardano-cli address build --payment-verification-key-file $CARDO_HOME/wallets/${wallet_name}.vkey --stake-verification-key-file $CARDO_HOME/wallets/${wallet_name}_stake.vkey --out-file $CARDO_HOME/wallets/${wallet_name}.addr ${NODE_MAGIC}
 
         echo -e "\nYour Wallet Address is:\n`cat $CARDO_HOME/wallets/${wallet_name}.addr`"
         echo -e ""
@@ -1305,7 +1305,7 @@ function multigen {
 
             cardano-cli address key-gen --verification-key-file $CARDO_HOME/wallets/${wallet_name}${i}.vkey --signing-key-file $CARDO_HOME/wallets/${wallet_name}${i}.skey
             cardano-cli stake-address key-gen --verification-key-file $CARDO_HOME/wallets/${wallet_name}${i}_stake.vkey --signing-key-file $CARDO_HOME/wallets/${wallet_name}${i}_stake.skey
-            cardano-cli address build --payment-verification-key-file $CARDO_HOME/wallets/${wallet_name}${i}.vkey --stake-verification-key-file $CARDO_HOME/wallets/${wallet_name}${i}_stake.vkey --out-file $CARDO_HOME/wallets/${wallet_name}${i}.addr --mainnet
+            cardano-cli address build --payment-verification-key-file $CARDO_HOME/wallets/${wallet_name}${i}.vkey --stake-verification-key-file $CARDO_HOME/wallets/${wallet_name}${i}_stake.vkey --out-file $CARDO_HOME/wallets/${wallet_name}${i}.addr ${NODE_MAGIC}
 
             echo -e "\nWallet Address for ${wallet_name}${i}:\n`cat $CARDO_HOME/wallets/${wallet_name}${i}.addr`"
 
@@ -1322,7 +1322,7 @@ function regen_test {
     wallet_name=$1
 
     cardano-cli address key-gen --verification-key-file $CARDO_HOME/wallets/${wallet_name}_temp.vkey --signing-key-file $CARDO_HOME/wallets/${wallet_name}_temp.skey
-    cardano-cli address build --payment-verification-key-file $CARDO_HOME/wallets/${wallet_name}_temp.vkey --stake-verification-key-file $CARDO_HOME/wallets/${wallet_name}_stake.vkey --out-file $CARDO_HOME/wallets/${wallet_name}_temp.addr --mainnet
+    cardano-cli address build --payment-verification-key-file $CARDO_HOME/wallets/${wallet_name}_temp.vkey --stake-verification-key-file $CARDO_HOME/wallets/${wallet_name}_stake.vkey --out-file $CARDO_HOME/wallets/${wallet_name}_temp.addr ${NODE_MAGIC}
 
     echo -e "\nYour Wallet Address is:\n`cat $CARDO_HOME/wallets/${wallet_name}_temp.addr`"
 }
