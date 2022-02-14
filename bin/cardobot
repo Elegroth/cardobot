@@ -1,7 +1,7 @@
 #!/bin/bash
 #set -x
 
-version='0.3.2'
+version='0.3.3'
 
 mkdir -p $CARDO_HOME/transactions/
 mkdir -p $CARDO_HOME/wallets/
@@ -1098,7 +1098,6 @@ function check {
         num=$[$num+1]
     done
 
-    TOTALADA_BF=($(cardano-cli query utxo --mainnet --address ${wallet_addr} | grep lovelace | awk '{print $3}'))
     TOTALADA=$(IFS=+; echo "$((${TOTALADA_BF[*]}))")
 
     echo -e "Remaining ADA: `echo "scale = 2; $TOTALADA / 1000000" | bc`\n"
@@ -1173,7 +1172,6 @@ function checkall {
             num=$[$num+1]
         done
 
-        TOTALADA_BF=($(cardano-cli query utxo --mainnet --address ${wallet_addr} | grep lovelace | awk '{print $3}'))
         TOTALADA=$(IFS=+; echo "$((${TOTALADA_BF[*]}))")
 
         echo -e "Remaining ADA: `echo "scale = 2; $TOTALADA / 1000000" | bc`"
@@ -1220,6 +1218,7 @@ function purge {
         check_wallet=`ls $CARDO_HOME/wallets/${wallet_name}.addr 2>/dev/null`
 
         if [[ ! -z ${check_wallet} ]]; then
+        
             rm -rf $CARDO_HOME/wallets/${wallet_name}.vkey
             rm -rf $CARDO_HOME/wallets/${wallet_name}.skey
             rm -rf $CARDO_HOME/wallets/${wallet_name}_stake.vkey
