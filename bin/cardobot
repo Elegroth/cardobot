@@ -1,12 +1,22 @@
 #!/bin/bash
 #set -x
 
-version='0.3.4'
+version='0.3.5'
 
 if [[ $TESTNET_ENABLED == 'true' ]]; then
     NODE_MAGIC="--testnet-magic 1097911063"
 else
     NODE_MAGIC="--mainnet"
+fi
+
+if [[ $BLOCKFROST_ENABLED == 'true' ]]; then
+    BLOCKFROST_PROJECT_ID=$BLOCKFROST_PROJECT
+fi
+
+if [[ ${DB_SYNC_ENABLED} == 'true' ]]; then
+    export POSTGRES_HOST=$(cat ~/.pgpass | awk -F ':' '{print $1}')
+    export POSTGRES_DB=$(cat ~/.pgpass | awk -F ':' '{print $3}')
+    export POSTGRES_USER=$(cat ~/.pgpass | awk -F ':' '{print $4}')
 fi
 
 mkdir -p $CARDO_HOME/transactions/
@@ -30,43 +40,98 @@ function send {
 
         mkdir -p $CARDO_HOME/transactions/$1/
 
-        UTXO=$(cardano-cli query utxo ${NODE_MAGIC} --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
+        if [[ ${BLOCKFROST_ENABLED} == 'true' ]]; then
+            UTXO=$(curl -s -H "project_id: $BLOCKFROST_PROJECT_ID" https://cardano-mainnet.blockfrost.io/api/v0/addresses/${PAYMENT_ADDR}/utxos)
+        else
+            UTXO=$(cardano-cli query utxo ${NODE_MAGIC} --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
+        fi
 
         TOTALADA_BF=()
         TXPOLIC_BF=()
+        TXTOKAMT=()
         TXIN=()
         TXCOUNT=0
 
-        while IFS= read -r line; do
+        if [[ ${BLOCKFROST_ENABLED} == 'true' ]]; then
+        
+            TXHASH_ARR=($(echo ${UTXO} | jq -r .[].tx_hash))
+            TXID_ARR=($(echo ${UTXO} | jq -r .[].tx_index))
+            TXAMT_ARR=($(echo ${UTXO} | jq -c .[].amount))
 
-            if [[ `echo $line | awk '{print $1}'` =~ ^[[:xdigit:]]{64}$ ]]; then
-                TXHASH=$(echo $line | awk '{print $1}')
-                TXID=$(echo $line | awk '{print $2}')
-                TXAMT=$(echo $line | awk '{print $3}')
+            x=0
 
-                TXIN+=("--tx-in \"${TXHASH}#${TXID}\"")
+            for llamount in "${TXAMT_ARR[@]}"; do
+
+                TXAMT=$(echo $llamount | jq -r '.[] | select(.unit=="lovelace") | .quantity')
                 TOTALADA_BF+=($TXAMT)
+
+                TXTOK=($(echo $llamount | jq -c '.[] | select(.unit!="lovelace")'))
+
+                if [[ ! -z "${TXTOK[*]}" ]]; then
+
+                    for tok in "${TXTOK[@]}"; do
+                        TXTOK_UNIT=$(echo "${tok}" | jq -r .unit)
+                        TXTOK_AMT=$(echo "${tok}" | jq -r .quantity)
+
+                        TXTOK_POL=${TXTOK_UNIT::56}
+                        TXTOK_ID=${TXTOK_UNIT:56}
+
+                        TXPOLIC_BF+=("${TXTOK_POL}.${TXTOK_ID}")
+                        TXPOLIC_BF_NODOT+=("${TXTOK_POL}${TXTOK_ID}")
+                    done
+
+                fi     
+
+            done
+
+            while [[ $x -lt ${#TXHASH_ARR[@]} ]]; do
+
+                TXIN+=("--tx-in \"${TXHASH_ARR[$x]}#${TXID_ARR[$x]}\"")
                 TXCOUNT=$[$TXCOUNT+1]
-            elif [[ `echo $line | awk '{print $1}'` != "TxOutDatumNone" ]]; then
-                TXPOLIC_BF+=($(echo $line | awk '{print $2}'))
-            fi
+                x=$[$x+1]
 
-        done <<< "${UTXO}"
+            done
 
-        TXPOLIC=($(echo "${TXPOLIC_BF[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
+            TXPOLIC=($(echo "${TXPOLIC_BF[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
+            TXPOLIC_NODOT=($(echo "${TXPOLIC_BF_NODOT[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
 
-        TXTOKAMT=()
+            for tok in "${TXPOLIC_NODOT[@]}"; do
+                TOKAMT_BF=($(echo ${TXAMT_ARR[*]} | jq -r ".[] | select(.unit==\"$tok\") | .quantity"))
+                TXTOKAMT+=($(IFS=+; echo "$((${TOKAMT_BF[*]}))"))
+            done
 
-        for tok in ${TXPOLIC[@]}; do
-            TOKLIST=$(echo "${UTXO}" | grep -w $tok)
-            TOKAMT_BF=()
+        else
 
             while IFS= read -r line; do
-                TOKAMT_BF+=($(echo $line | awk '{print $1}'))
-            done <<< "${TOKLIST}"
 
-            TXTOKAMT+=($(IFS=+; echo "$((${TOKAMT_BF[*]}))"))
-        done
+                if [[ `echo $line | awk '{print $1}'` =~ ^[[:xdigit:]]{64}$ ]]; then
+                    TXHASH=$(echo $line | awk '{print $1}')
+                    TXID=$(echo $line | awk '{print $2}')
+                    TXAMT=$(echo $line | awk '{print $3}')
+
+                    TXIN+=("--tx-in \"${TXHASH}#${TXID}\"")
+                    TOTALADA_BF+=($TXAMT)
+                    TXCOUNT=$[$TXCOUNT+1]
+                elif [[ `echo $line | awk '{print $1}'` != "TxOutDatumNone" ]]; then
+                    TXPOLIC_BF+=($(echo $line | awk '{print $2}'))
+                fi
+
+            done <<< "${UTXO}"
+
+            TXPOLIC=($(echo "${TXPOLIC_BF[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
+
+            for tok in ${TXPOLIC[@]}; do
+                TOKLIST=$(echo "${UTXO}" | grep -w $tok)
+                TOKAMT_BF=()
+
+                while IFS= read -r line; do
+                    TOKAMT_BF+=($(echo $line | awk '{print $1}'))
+                done <<< "${TOKLIST}"
+
+                TXTOKAMT+=($(IFS=+; echo "$((${TOKAMT_BF[*]}))"))
+            done
+
+        fi
 
         TOTALADA=$(IFS=+; echo "$((${TOTALADA_BF[*]}))")
         num=0
@@ -75,6 +140,7 @@ function send {
         SENDSELF=""
 
         while [[ $num -lt ${#TXPOLIC[@]} ]]; do
+
             if [[ "$5" == "--send-all" ]]; then
                 SENDALL="${SENDALL}+\"${TXTOKAMT[$num]} ${TXPOLIC[$num]}\""
             else
@@ -82,6 +148,7 @@ function send {
             fi
 
             num=$[$num+1]
+
         done
 
         cardano-cli query protocol-parameters \
@@ -125,19 +192,38 @@ function send {
 
         while [[ "$TX_DONE" == "FALSE" ]]; do
 
-            UTXO_AF=$(cardano-cli query utxo ${NODE_MAGIC} --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
+            if [[ ${BLOCKFROST_ENABLED} == 'true' ]]; then
+                sleep 5
+                UTXO_AF=$(curl -s -H "project_id: $BLOCKFROST_PROJECT_ID" https://cardano-mainnet.blockfrost.io/api/v0/addresses/${PAYMENT_ADDR}/utxos)
+            else
+                UTXO_AF=$(cardano-cli query utxo ${NODE_MAGIC} --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
+            fi
 
             TOTALADA_AF=()
 
-            while IFS= read -r line; do
+            if [[ ${BLOCKFROST_ENABLED} == 'true' ]]; then
 
-                if [[ `echo $line | awk '{print $1}'` =~ ^[[:xdigit:]]{64}$ ]]; then
-                    TXAMT=$(echo $line | awk '{print $3}')
+                TXAMT_ARR=($(echo ${UTXO_AF} | jq -c .[].amount))
+                x=0
+
+                for llamount in "${TXAMT_ARR[@]}"; do
+                    TXAMT=$(echo $llamount | jq -r '.[] | select(.unit=="lovelace") | .quantity')
                     TOTALADA_AF+=($TXAMT)
-                    TXCOUNT=$[$TXCOUNT+1]
-                fi
+                done
 
-            done <<< "${UTXO_AF}"
+            else
+
+                while IFS= read -r line; do
+
+                    if [[ `echo $line | awk '{print $1}'` =~ ^[[:xdigit:]]{64}$ ]]; then
+                        TXAMT=$(echo $line | awk '{print $3}')
+                        TOTALADA_AF+=($TXAMT)
+                        TXCOUNT=$[$TXCOUNT+1]
+                    fi
+
+                done <<< "${UTXO_AF}"
+            
+            fi
 
             TOTALADA_AF_DONE=$(IFS=+; echo "$((${TOTALADA_AF[*]}))")
 
@@ -158,6 +244,7 @@ function send {
         echo "$line_number,`echo "scale = 2; $ADA_OUT / 1000000" | bc`,`echo "scale = 3; $TXFEE / 1000000" | bc | sed 's/^\$CARDO_HOME/0$CARDO_HOME/'`,$PAYMENT_ADDR,$OUTPUT_ADDR,$(date +%T)" >> $CARDO_HOME/logs/$1_tx_log.csv
 
     done
+    
 }
 
 function nochecksend {
@@ -177,43 +264,98 @@ function nochecksend {
 
         mkdir -p $CARDO_HOME/transactions/$1/
 
-        UTXO=$(cardano-cli query utxo ${NODE_MAGIC} --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
+        if [[ ${BLOCKFROST_ENABLED} == 'true' ]]; then
+            UTXO=$(curl -s -H "project_id: $BLOCKFROST_PROJECT_ID" https://cardano-mainnet.blockfrost.io/api/v0/addresses/${PAYMENT_ADDR}/utxos)
+        else
+            UTXO=$(cardano-cli query utxo ${NODE_MAGIC} --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
+        fi
 
         TOTALADA_BF=()
         TXPOLIC_BF=()
+        TXTOKAMT=()
         TXIN=()
         TXCOUNT=0
 
-        while IFS= read -r line; do
+        if [[ ${BLOCKFROST_ENABLED} == 'true' ]]; then
+        
+            TXHASH_ARR=($(echo ${UTXO} | jq -r .[].tx_hash))
+            TXID_ARR=($(echo ${UTXO} | jq -r .[].tx_index))
+            TXAMT_ARR=($(echo ${UTXO} | jq -c .[].amount))
 
-            if [[ `echo $line | awk '{print $1}'` =~ ^[[:xdigit:]]{64}$ ]]; then
-                TXHASH=$(echo $line | awk '{print $1}')
-                TXID=$(echo $line | awk '{print $2}')
-                TXAMT=$(echo $line | awk '{print $3}')
+            x=0
 
-                TXIN+=("--tx-in \"${TXHASH}#${TXID}\"")
+            for llamount in "${TXAMT_ARR[@]}"; do
+
+                TXAMT=$(echo $llamount | jq -r '.[] | select(.unit=="lovelace") | .quantity')
                 TOTALADA_BF+=($TXAMT)
+
+                TXTOK=($(echo $llamount | jq -c '.[] | select(.unit!="lovelace")'))
+
+                if [[ ! -z "${TXTOK[*]}" ]]; then
+
+                    for tok in "${TXTOK[@]}"; do
+                        TXTOK_UNIT=$(echo "${tok}" | jq -r .unit)
+                        TXTOK_AMT=$(echo "${tok}" | jq -r .quantity)
+
+                        TXTOK_POL=${TXTOK_UNIT::56}
+                        TXTOK_ID=${TXTOK_UNIT:56}
+
+                        TXPOLIC_BF+=("${TXTOK_POL}.${TXTOK_ID}")
+                        TXPOLIC_BF_NODOT+=("${TXTOK_POL}${TXTOK_ID}")
+                    done
+
+                fi     
+
+            done
+
+            while [[ $x -lt ${#TXHASH_ARR[@]} ]]; do
+
+                TXIN+=("--tx-in \"${TXHASH_ARR[$x]}#${TXID_ARR[$x]}\"")
                 TXCOUNT=$[$TXCOUNT+1]
-            elif [[ `echo $line | awk '{print $1}'` != "TxOutDatumNone" ]]; then
-                TXPOLIC_BF+=($(echo $line | awk '{print $2}'))
-            fi
+                x=$[$x+1]
 
-        done <<< "${UTXO}"
+            done
 
-        TXPOLIC=($(echo "${TXPOLIC_BF[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
+            TXPOLIC=($(echo "${TXPOLIC_BF[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
+            TXPOLIC_NODOT=($(echo "${TXPOLIC_BF_NODOT[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
 
-        TXTOKAMT=()
+            for tok in "${TXPOLIC_NODOT[@]}"; do
+                TOKAMT_BF=($(echo ${TXAMT_ARR[*]} | jq -r ".[] | select(.unit==\"$tok\") | .quantity"))
+                TXTOKAMT+=($(IFS=+; echo "$((${TOKAMT_BF[*]}))"))
+            done
 
-        for tok in ${TXPOLIC[@]}; do
-            TOKLIST=$(echo "${UTXO}" | grep -w $tok)
-            TOKAMT_BF=()
+        else
 
             while IFS= read -r line; do
-                TOKAMT_BF+=($(echo $line | awk '{print $1}'))
-            done <<< "${TOKLIST}"
 
-            TXTOKAMT+=($(IFS=+; echo "$((${TOKAMT_BF[*]}))"))
-        done
+                if [[ `echo $line | awk '{print $1}'` =~ ^[[:xdigit:]]{64}$ ]]; then
+                    TXHASH=$(echo $line | awk '{print $1}')
+                    TXID=$(echo $line | awk '{print $2}')
+                    TXAMT=$(echo $line | awk '{print $3}')
+
+                    TXIN+=("--tx-in \"${TXHASH}#${TXID}\"")
+                    TOTALADA_BF+=($TXAMT)
+                    TXCOUNT=$[$TXCOUNT+1]
+                elif [[ `echo $line | awk '{print $1}'` != "TxOutDatumNone" ]]; then
+                    TXPOLIC_BF+=($(echo $line | awk '{print $2}'))
+                fi
+
+            done <<< "${UTXO}"
+
+            TXPOLIC=($(echo "${TXPOLIC_BF[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
+
+            for tok in ${TXPOLIC[@]}; do
+                TOKLIST=$(echo "${UTXO}" | grep -w $tok)
+                TOKAMT_BF=()
+
+                while IFS= read -r line; do
+                    TOKAMT_BF+=($(echo $line | awk '{print $1}'))
+                done <<< "${TOKLIST}"
+
+                TXTOKAMT+=($(IFS=+; echo "$((${TOKAMT_BF[*]}))"))
+            done
+
+        fi
 
         TOTALADA=$(IFS=+; echo "$((${TOTALADA_BF[*]}))")
         num=0
@@ -444,44 +586,100 @@ function multisend {
 
             mkdir -p $CARDO_HOME/transactions/${ADDR_NAME}/
 
-            UTXO=$(cardano-cli query utxo ${NODE_MAGIC} --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
+            if [[ ${BLOCKFROST_ENABLED} == 'true' ]]; then
+                UTXO=$(curl -s -H "project_id: $BLOCKFROST_PROJECT_ID" https://cardano-mainnet.blockfrost.io/api/v0/addresses/${PAYMENT_ADDR}/utxos)
+            else
+                UTXO=$(cardano-cli query utxo ${NODE_MAGIC} --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
+            fi
+
             echo ${UTXO} > $CARDO_HOME/transactions/${ADDR_NAME}/utxo${i}
 
             TOTALADA_BF=()
             TXPOLIC_BF=()
+            TXTOKAMT=()
             TXIN=()
             TXCOUNT=0
 
-            while IFS= read -r line; do
+            if [[ ${BLOCKFROST_ENABLED} == 'true' ]]; then
+            
+                TXHASH_ARR=($(echo ${UTXO} | jq -r .[].tx_hash))
+                TXID_ARR=($(echo ${UTXO} | jq -r .[].tx_index))
+                TXAMT_ARR=($(echo ${UTXO} | jq -c .[].amount))
 
-                if [[ `echo $line | awk '{print $1}'` =~ ^[[:xdigit:]]{64}$ ]]; then
-                    TXHASH=$(echo $line | awk '{print $1}')
-                    TXID=$(echo $line | awk '{print $2}')
-                    TXAMT=$(echo $line | awk '{print $3}')
+                x=0
 
-                    TXIN+=("--tx-in \"${TXHASH}#${TXID}\"")
+                for llamount in "${TXAMT_ARR[@]}"; do
+
+                    TXAMT=$(echo $llamount | jq -r '.[] | select(.unit=="lovelace") | .quantity')
                     TOTALADA_BF+=($TXAMT)
+
+                    TXTOK=($(echo $llamount | jq -c '.[] | select(.unit!="lovelace")'))
+
+                    if [[ ! -z "${TXTOK[*]}" ]]; then
+
+                        for tok in "${TXTOK[@]}"; do
+                            TXTOK_UNIT=$(echo "${tok}" | jq -r .unit)
+                            TXTOK_AMT=$(echo "${tok}" | jq -r .quantity)
+
+                            TXTOK_POL=${TXTOK_UNIT::56}
+                            TXTOK_ID=${TXTOK_UNIT:56}
+
+                            TXPOLIC_BF+=("${TXTOK_POL}.${TXTOK_ID}")
+                            TXPOLIC_BF_NODOT+=("${TXTOK_POL}${TXTOK_ID}")
+                        done
+
+                    fi     
+
+                done
+
+                while [[ $x -lt ${#TXHASH_ARR[@]} ]]; do
+
+                    TXIN+=("--tx-in \"${TXHASH_ARR[$x]}#${TXID_ARR[$x]}\"")
                     TXCOUNT=$[$TXCOUNT+1]
-                elif [[ `echo $line | awk '{print $1}'` != "TxOutDatumNone" ]]; then
-                    TXPOLIC_BF+=($(echo $line | awk '{print $2}'))
-                fi
+                    x=$[$x+1]
 
-            done <<< "${UTXO}"
+                done
 
-            TXPOLIC=($(echo "${TXPOLIC_BF[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
+                TXPOLIC=($(echo "${TXPOLIC_BF[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
+                TXPOLIC_NODOT=($(echo "${TXPOLIC_BF_NODOT[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
 
-            TXTOKAMT=()
+                for tok in "${TXPOLIC_NODOT[@]}"; do
+                    TOKAMT_BF=($(echo ${TXAMT_ARR[*]} | jq -r ".[] | select(.unit==\"$tok\") | .quantity"))
+                    TXTOKAMT+=($(IFS=+; echo "$((${TOKAMT_BF[*]}))"))
+                done
 
-            for tok in ${TXPOLIC[@]}; do
-                TOKLIST=$(echo "${UTXO}" | grep -w $tok)
-                TOKAMT_BF=()
+            else
 
                 while IFS= read -r line; do
-                    TOKAMT_BF+=($(echo $line | awk '{print $1}'))
-                done <<< "${TOKLIST}"
 
-                TXTOKAMT+=($(IFS=+; echo "$((${TOKAMT_BF[*]}))"))
-            done
+                    if [[ `echo $line | awk '{print $1}'` =~ ^[[:xdigit:]]{64}$ ]]; then
+                        TXHASH=$(echo $line | awk '{print $1}')
+                        TXID=$(echo $line | awk '{print $2}')
+                        TXAMT=$(echo $line | awk '{print $3}')
+
+                        TXIN+=("--tx-in \"${TXHASH}#${TXID}\"")
+                        TOTALADA_BF+=($TXAMT)
+                        TXCOUNT=$[$TXCOUNT+1]
+                    elif [[ `echo $line | awk '{print $1}'` != "TxOutDatumNone" ]]; then
+                        TXPOLIC_BF+=($(echo $line | awk '{print $2}'))
+                    fi
+
+                done <<< "${UTXO}"
+
+                TXPOLIC=($(echo "${TXPOLIC_BF[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
+
+                for tok in ${TXPOLIC[@]}; do
+                    TOKLIST=$(echo "${UTXO}" | grep -w $tok)
+                    TOKAMT_BF=()
+
+                    while IFS= read -r line; do
+                        TOKAMT_BF+=($(echo $line | awk '{print $1}'))
+                    done <<< "${TOKLIST}"
+
+                    TXTOKAMT+=($(IFS=+; echo "$((${TOKAMT_BF[*]}))"))
+                done
+
+            fi
 
             TOTALADA=$(IFS=+; echo "$((${TOTALADA_BF[*]}))")
             num=0
@@ -563,58 +761,66 @@ function multisend {
             UTXO=$(cat $CARDO_HOME/transactions/${ADDR_NAME}/utxo${i})
 
             TOTALADA_BF=()
-            TXPOLIC_BF=()
-            TXIN=()
-            TXCOUNT=0
 
-            while IFS= read -r line; do
+            if [[ ${BLOCKFROST_ENABLED} == 'true' ]]; then
 
-                if [[ `echo $line | awk '{print $1}'` =~ ^[[:xdigit:]]{64}$ ]]; then
-                    TXHASH=$(echo $line | awk '{print $1}')
-                    TXID=$(echo $line | awk '{print $2}')
-                    TXAMT=$(echo $line | awk '{print $3}')
+                TXAMT_ARR=($(echo ${UTXO} | jq -c .[].amount))
+                x=0
 
-                    TXIN+=("--tx-in \"${TXHASH}#${TXID}\"")
+                for llamount in "${TXAMT_ARR[@]}"; do
+                    TXAMT=$(echo $llamount | jq -r '.[] | select(.unit=="lovelace") | .quantity')
                     TOTALADA_BF+=($TXAMT)
-                    TXCOUNT=$[$TXCOUNT+1]
-                elif [[ `echo $line | awk '{print $1}'` != "TxOutDatumNone" ]]; then
-                    TXPOLIC_BF+=($(echo $line | awk '{print $2}'))
-                fi
+                done
 
-            done <<< "${UTXO}"
-
-            TXPOLIC=($(echo "${TXPOLIC_BF[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
-
-            TXTOKAMT=()
-
-            for tok in ${TXPOLIC[@]}; do
-                TOKLIST=$(echo "${UTXO}" | grep -w $tok)
-                TOKAMT_BF=()
-
-                while IFS= read -r line; do
-                    TOKAMT_BF+=($(echo $line | awk '{print $1}'))
-                done <<< "${TOKLIST}"
-
-                TXTOKAMT+=($(IFS=+; echo "$((${TOKAMT_BF[*]}))"))
-            done
-
-            TOTALADA=$(IFS=+; echo "$((${TOTALADA_BF[*]}))")
-
-            while [[ "$TX_DONE" == "FALSE" ]]; do
-
-                UTXO_AF=$(cardano-cli query utxo ${NODE_MAGIC} --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
-
-                TOTALADA_AF=()
+            else
 
                 while IFS= read -r line; do
 
                     if [[ `echo $line | awk '{print $1}'` =~ ^[[:xdigit:]]{64}$ ]]; then
                         TXAMT=$(echo $line | awk '{print $3}')
-                        TOTALADA_AF+=($TXAMT)
-                        TXCOUNT=$[$TXCOUNT+1]
+                        TOTALADA_BF+=($TXAMT)
                     fi
 
-                done <<< "${UTXO_AF}"
+                done <<< "${UTXO}"
+            
+            fi
+
+            TOTALADA=$(IFS=+; echo "$((${TOTALADA_BF[*]}))")
+
+            while [[ "$TX_DONE" == "FALSE" ]]; do
+
+                if [[ ${BLOCKFROST_ENABLED} == 'true' ]]; then
+                    sleep 5
+                    UTXO_AF=$(curl -s -H "project_id: $BLOCKFROST_PROJECT_ID" https://cardano-mainnet.blockfrost.io/api/v0/addresses/${PAYMENT_ADDR}/utxos)
+                else
+                    UTXO_AF=$(cardano-cli query utxo ${NODE_MAGIC} --address ${PAYMENT_ADDR} | grep lovelace | tr '+' '\n')
+                fi
+
+                TOTALADA_AF=()
+
+                if [[ ${BLOCKFROST_ENABLED} == 'true' ]]; then
+
+                    TXAMT_ARR=($(echo ${UTXO_AF} | jq -c .[].amount))
+                    x=0
+
+                    for llamount in "${TXAMT_ARR[@]}"; do
+                        TXAMT=$(echo $llamount | jq -r '.[] | select(.unit=="lovelace") | .quantity')
+                        TOTALADA_AF+=($TXAMT)
+                    done
+
+                else
+
+                    while IFS= read -r line; do
+
+                        if [[ `echo $line | awk '{print $1}'` =~ ^[[:xdigit:]]{64}$ ]]; then
+                            TXAMT=$(echo $line | awk '{print $3}')
+                            TOTALADA_AF+=($TXAMT)
+                            TXCOUNT=$[$TXCOUNT+1]
+                        fi
+
+                    done <<< "${UTXO_AF}"
+                
+                fi
 
                 TOTALADA_AF_DONE=$(IFS=+; echo "$((${TOTALADA_AF[*]}))")
 
@@ -1049,9 +1255,7 @@ function newmultisend {
             echo "txid,ada_sent,fees,from_addr,to_addr,timestamp" > $CARDO_HOME/logs/${ADDR_NAME}_tx_log.csv
         fi
 
-        nohup cardobot nochecksend ${ADDR_NAME} 1 $2 $3 $4 2>&1 > ${ADDR_NAME}.out &
-
-        sleep 0.1
+        cardobot nochecksend ${ADDR_NAME} 1 $2 $3 $4 &
 
     done
 
@@ -1062,36 +1266,83 @@ function check {
 
     echo -e "\nWallet Address: $wallet_addr"
 
-    UTXO=$(cardano-cli query utxo ${NODE_MAGIC} --address ${wallet_addr} | grep lovelace | tr '+' '\n')
+    if [[ ${BLOCKFROST_ENABLED} == 'true' ]]; then
+        UTXO=$(curl -s -H "project_id: $BLOCKFROST_PROJECT_ID" https://cardano-mainnet.blockfrost.io/api/v0/addresses/${wallet_addr}/utxos)
+    else
+        UTXO=$(cardano-cli query utxo ${NODE_MAGIC} --address ${wallet_addr} | grep lovelace | tr '+' '\n')
+    fi
 
     TOTALADA_BF=()
     TXPOLIC_BF=()
-
-    while IFS= read -r line; do
-
-        if [[ `echo $line | awk '{print $1}'` =~ ^[[:xdigit:]]{64}$ ]]; then
-            TXAMT=$(echo $line | awk '{print $3}')
-            TOTALADA_BF+=($TXAMT)
-        elif [[ `echo $line | awk '{print $1}'` != "TxOutDatumNone" ]]; then
-            TXPOLIC_BF+=($(echo $line | awk '{print $2}'))
-        fi
-
-    done <<< "${UTXO}"
-
-    TXPOLIC=($(echo "${TXPOLIC_BF[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
-
     TXTOKAMT=()
 
-    for tok in ${TXPOLIC[@]}; do
-        TOKLIST=$(echo "${UTXO}" | grep -w $tok)
-        TOKAMT_BF=()
+    if [[ ${BLOCKFROST_ENABLED} == 'true' ]]; then
+        
+        TXHASH_ARR=($(echo ${UTXO} | jq -r .[].tx_hash 2> /dev/null))
+        TXID_ARR=($(echo ${UTXO} | jq -r .[].tx_index 2> /dev/null))
+        TXAMT_ARR=($(echo ${UTXO} | jq -c .[].amount 2> /dev/null))
+
+        x=0
+
+        for llamount in "${TXAMT_ARR[@]}"; do
+
+            TXAMT=$(echo $llamount | jq -r '.[] | select(.unit=="lovelace") | .quantity')
+            TOTALADA_BF+=($TXAMT)
+
+            TXTOK=($(echo $llamount | jq -c '.[] | select(.unit!="lovelace")'))
+
+            if [[ ! -z "${TXTOK[*]}" ]]; then
+
+                for tok in "${TXTOK[@]}"; do
+                    TXTOK_UNIT=$(echo "${tok}" | jq -r .unit)
+                    TXTOK_AMT=$(echo "${tok}" | jq -r .quantity)
+
+                    TXTOK_POL=${TXTOK_UNIT::56}
+                    TXTOK_ID=${TXTOK_UNIT:56}
+
+                    TXPOLIC_BF+=("${TXTOK_POL}.${TXTOK_ID}")
+                    TXPOLIC_BF_NODOT+=("${TXTOK_POL}${TXTOK_ID}")
+                done
+
+            fi     
+
+        done
+
+        TXPOLIC=($(echo "${TXPOLIC_BF[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
+        TXPOLIC_NODOT=($(echo "${TXPOLIC_BF_NODOT[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
+
+        for tok in "${TXPOLIC_NODOT[@]}"; do
+            TOKAMT_BF=($(echo ${TXAMT_ARR[*]} | jq -r ".[] | select(.unit==\"$tok\") | .quantity"))
+            TXTOKAMT+=($(IFS=+; echo "$((${TOKAMT_BF[*]}))"))
+        done
+
+    else
 
         while IFS= read -r line; do
-            TOKAMT_BF+=($(echo $line | awk '{print $1}'))
-        done <<< "${TOKLIST}"
 
-        TXTOKAMT+=($(IFS=+; echo "$((${TOKAMT_BF[*]}))"))
-    done
+            if [[ `echo $line | awk '{print $1}'` =~ ^[[:xdigit:]]{64}$ ]]; then
+                TXAMT=$(echo $line | awk '{print $3}')
+                TOTALADA_BF+=($TXAMT)
+            elif [[ `echo $line | awk '{print $1}'` != "TxOutDatumNone" ]]; then
+                TXPOLIC_BF+=($(echo $line | awk '{print $2}'))
+            fi
+
+        done <<< "${UTXO}"
+
+        TXPOLIC=($(echo "${TXPOLIC_BF[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
+
+        for tok in ${TXPOLIC[@]}; do
+            TOKLIST=$(echo "${UTXO}" | grep -w $tok)
+            TOKAMT_BF=()
+
+            while IFS= read -r line; do
+                TOKAMT_BF+=($(echo $line | awk '{print $1}'))
+            done <<< "${TOKLIST}"
+
+            TXTOKAMT+=($(IFS=+; echo "$((${TOKAMT_BF[*]}))"))
+        done
+
+    fi
 
     TOTALADA=$(IFS=+; echo "$((${TOTALADA_BF[*]}))")
     num=0
@@ -1136,38 +1387,85 @@ function checkall {
 
         echo -e "\n${addr%.*} | $wallet_addr"
 
-        UTXO=$(cardano-cli query utxo ${NODE_MAGIC} --address $wallet_addr | grep lovelace | tr '+' '\n')
+        if [[ ${BLOCKFROST_ENABLED} == 'true' ]]; then
+            UTXO=$(curl -s -H "project_id: $BLOCKFROST_PROJECT_ID" https://cardano-mainnet.blockfrost.io/api/v0/addresses/${wallet_addr}/utxos)
+        else
+            UTXO=$(cardano-cli query utxo ${NODE_MAGIC} --address ${wallet_addr} | grep lovelace | tr '+' '\n')
+        fi
 
         TOTALADA_BF=()
         TXPOLIC_BF=()
-
-        while IFS= read -r line; do
-
-            if [[ `echo $line | awk '{print $1}'` =~ ^[[:xdigit:]]{64}$ ]]; then
-                TXAMT=$(echo $line | awk '{print $3}')
-                TOTALADA_BF+=($TXAMT)
-            elif [[ `echo $line | awk '{print $1}'` != "TxOutDatumNone" ]]; then
-                TXPOLIC_BF+=($(echo $line | awk '{print $2}'))
-            fi
-
-        done <<< "${UTXO}"
-
-        TXPOLIC=($(echo "${TXPOLIC_BF[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
-
+        TXPOLIC_BF_NODOT=()
         TXTOKAMT=()
 
-        for tok in ${TXPOLIC[@]}; do
-            TOKLIST=$(echo "${UTXO}" | grep -w $tok)
-            TOKAMT_BF=()
+        if [[ ${BLOCKFROST_ENABLED} == 'true' ]]; then
+            
+            TXHASH_ARR=($(echo ${UTXO} | jq -r .[].tx_hash 2> /dev/null))
+            TXID_ARR=($(echo ${UTXO} | jq -r .[].tx_index 2> /dev/null))
+            TXAMT_ARR=($(echo ${UTXO} | jq -c .[].amount 2> /dev/null))
+
+            x=0
+
+            for llamount in "${TXAMT_ARR[@]}"; do
+
+                TXAMT=$(echo $llamount | jq -r '.[] | select(.unit=="lovelace") | .quantity')
+                TOTALADA_BF+=($TXAMT)
+
+                TXTOK=($(echo $llamount | jq -c '.[] | select(.unit!="lovelace")'))
+
+                if [[ ! -z "${TXTOK[*]}" ]]; then
+
+                    for tok in "${TXTOK[@]}"; do
+                        TXTOK_UNIT=$(echo "${tok}" | jq -r .unit)
+                        TXTOK_AMT=$(echo "${tok}" | jq -r .quantity)
+
+                        TXTOK_POL=${TXTOK_UNIT::56}
+                        TXTOK_ID=${TXTOK_UNIT:56}
+
+                        TXPOLIC_BF+=("${TXTOK_POL}.${TXTOK_ID}")
+                        TXPOLIC_BF_NODOT+=("${TXTOK_POL}${TXTOK_ID}")
+                    done
+
+                fi     
+
+            done
+
+            TXPOLIC=($(echo "${TXPOLIC_BF[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
+            TXPOLIC_NODOT=($(echo "${TXPOLIC_BF_NODOT[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
+
+            for tok in "${TXPOLIC_NODOT[@]}"; do
+                TOKAMT_BF=($(echo ${TXAMT_ARR[*]} | jq -r ".[] | select(.unit==\"$tok\") | .quantity"))
+                TXTOKAMT+=($(IFS=+; echo "$((${TOKAMT_BF[*]}))"))
+            done
+
+        else
 
             while IFS= read -r line; do
-                TOKAMT_BF+=($(echo $line | awk '{print $1}'))
-            done <<< "${TOKLIST}"
 
-            TXTOKAMT+=($(IFS=+; echo "$((${TOKAMT_BF[*]}))"))
-        done
+                if [[ `echo $line | awk '{print $1}'` =~ ^[[:xdigit:]]{64}$ ]]; then
+                    TXAMT=$(echo $line | awk '{print $3}')
+                    TOTALADA_BF+=($TXAMT)
+                elif [[ `echo $line | awk '{print $1}'` != "TxOutDatumNone" ]]; then
+                    TXPOLIC_BF+=($(echo $line | awk '{print $2}'))
+                fi
 
-        TOTALADA=$(IFS=+; echo "$((${TOTALADA_BF[*]}))")
+            done <<< "${UTXO}"
+
+            TXPOLIC=($(echo "${TXPOLIC_BF[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
+
+            for tok in ${TXPOLIC[@]}; do
+                TOKLIST=$(echo "${UTXO}" | grep -w $tok)
+                TOKAMT_BF=()
+
+                while IFS= read -r line; do
+                    TOKAMT_BF+=($(echo $line | awk '{print $1}'))
+                done <<< "${TOKLIST}"
+
+                TXTOKAMT+=($(IFS=+; echo "$((${TOKAMT_BF[*]}))"))
+            done
+
+        fi
+        
         num=0
 
         SENDSELF=()
